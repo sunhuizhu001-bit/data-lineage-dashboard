@@ -1,0 +1,2244 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=1920, height=1080">
+<title>数据血缘与冷热监控系统</title>
+<script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
+<style>
+  :root {
+    --bg: #0a0e27;
+    --card-bg: rgba(16,22,65,0.85);
+    --border: rgba(64,128,255,0.2);
+    --accent: #4a8eff;
+    --accent2: #00e5ff;
+    --text: #b8c9e6;
+    --text-bright: #e8f0ff;
+    --gold: #ffb74d;
+    --green: #4caf93;
+    --red: #ef5350;
+    --orange: #ff9800;
+    --cold: #64b5f6;
+    --warm: #ffb74d;
+    --hot: #ef5350;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body {
+    width:1920px; height:1080px; overflow:hidden;
+    font-family:"PingFang SC","Microsoft YaHei","Helvetica Neue",sans-serif;
+    background:radial-gradient(ellipse at 50% 0%, #141a4a 0%, #0a0e27 55%);
+    color:var(--text); user-select:none;
+  }
+
+  #particles { position:fixed; top:0; left:0; width:100%; height:100%; z-index:0; pointer-events:none; }
+
+  .shell { position:relative; z-index:2; width:1920px; height:1080px; display:flex; flex-direction:column; }
+
+  /* ===== 顶部导航 ===== */
+  .topbar {
+    display:flex; align-items:center; justify-content:space-between;
+    height:56px; padding:0 20px; flex-shrink:0;
+    background:var(--card-bg); border-bottom:1px solid var(--border);
+  }
+  .topbar-left { display:flex; align-items:center; gap:12px; }
+  .logo { width:32px; height:32px; border-radius:6px; background:linear-gradient(135deg,var(--accent),var(--accent2)); display:flex; align-items:center; justify-content:center; font-size:16px; color:#fff; font-weight:bold; }
+  .logo-text { font-size:16px; font-weight:700; color:var(--text-bright); letter-spacing:1px; }
+  .topbar-right { display:flex; align-items:center; gap:16px; font-size:12px; }
+  .user-avatar { width:30px; height:30px; border-radius:50%; background:var(--accent); display:flex; align-items:center; justify-content:center; color:#fff; font-size:13px; }
+
+  /* ===== Tab 导航 ===== */
+  .nav {
+    display:flex; gap:0; flex-shrink:0;
+    background:rgba(10,14,39,0.9); border-bottom:1px solid var(--border);
+    padding:0 20px;
+  }
+  .nav-item {
+    padding:14px 24px; font-size:13px; color:var(--text); cursor:pointer;
+    border-bottom:2px solid transparent; transition:all 0.2s;
+    position:relative; white-space:nowrap;
+  }
+  .nav-item:hover { color:var(--text-bright); background:rgba(74,142,255,0.06); }
+  .nav-item.active { color:var(--accent2); border-bottom-color:var(--accent2); font-weight:600; }
+  .nav-item .badge { position:absolute; top:6px; right:4px; background:var(--red); color:#fff; font-size:10px; padding:1px 6px; border-radius:8px; min-width:18px; text-align:center; }
+
+  /* ===== 主内容 ===== */
+  .main { flex:1; overflow-y:auto; padding:12px 20px; display:flex; flex-direction:column; gap:12px; }
+  .main::-webkit-scrollbar { width:4px; }
+  .main::-webkit-scrollbar-thumb { background:rgba(74,142,255,0.3); border-radius:2px; }
+
+  /* ===== 卡片 ===== */
+  .card {
+    background:var(--card-bg); border:1px solid var(--border);
+    border-radius:8px; padding:16px 20px; position:relative;
+  }
+  .card::before {
+    content:''; position:absolute; top:0; left:0; width:100%; height:1px;
+    background:linear-gradient(90deg,transparent,var(--accent),transparent); opacity:0.5;
+  }
+  .card-title {
+    font-size:14px; font-weight:600; color:var(--text-bright);
+    margin-bottom:14px; display:flex; align-items:center; gap:8px;
+  }
+  .card-title::before { content:''; display:inline-block; width:3px; height:14px; background:var(--accent); border-radius:2px; }
+
+  /* ===== 统计卡片 ===== */
+  .stat-row { display:flex; gap:12px; }
+  .stat-card {
+    flex:1; background:var(--card-bg); border:1px solid var(--border);
+    border-radius:8px; padding:16px 20px; cursor:pointer; transition:all 0.2s;
+  }
+  .stat-card:hover { border-color:var(--accent); transform:translateY(-2px); box-shadow:0 4px 20px rgba(74,142,255,0.1); }
+  .stat-card .stat-num { font-size:32px; font-weight:700; color:var(--text-bright); font-family:"DIN Alternate","Helvetica Neue",sans-serif; }
+  .stat-card .stat-label { font-size:12px; color:var(--text); margin-top:4px; }
+  .stat-card .stat-change { font-size:11px; margin-top:4px; }
+  .stat-card .stat-change.up { color:var(--green); }
+  .stat-card .stat-change.down { color:var(--red); }
+
+  /* ===== 两栏布局 ===== */
+  .row-2 { display:flex; gap:12px; }
+  .row-2 > * { flex:1; min-width:0; }
+  .row-3 { display:flex; gap:12px; }
+  .row-3 > * { flex:1; min-width:0; }
+
+  /* ===== 按钮 ===== */
+  .btn {
+    padding:6px 16px; border-radius:4px; font-size:12px; cursor:pointer; border:none;
+    transition:all 0.2s; font-family:inherit;
+  }
+  .btn-primary { background:var(--accent); color:#fff; }
+  .btn-primary:hover { background:#5b9fff; }
+  .btn-outline { background:transparent; color:var(--accent); border:1px solid var(--accent); }
+  .btn-outline:hover { background:rgba(74,142,255,0.1); }
+  .btn-danger { background:transparent; color:var(--red); border:1px solid var(--red); }
+  .btn-danger:hover { background:rgba(239,83,80,0.1); }
+  .btn-sm { padding:3px 10px; font-size:11px; }
+
+  /* ===== 输入框 ===== */
+  .input {
+    background:rgba(10,14,39,0.6); border:1px solid var(--border); color:var(--text-bright);
+    padding:8px 14px; border-radius:4px; font-size:13px; font-family:inherit;
+    outline:none; transition:border-color 0.2s;
+  }
+  .input:focus { border-color:var(--accent); }
+  .input::placeholder { color:rgba(184,201,230,0.4); }
+  select.input { cursor:pointer; }
+
+  /* ===== 表格 ===== */
+  .table-wrap { overflow-x:auto; }
+  table { width:100%; border-collapse:collapse; font-size:12px; }
+  th { text-align:left; padding:10px 12px; color:var(--text); font-weight:500; border-bottom:1px solid var(--border); white-space:nowrap; }
+  td { padding:10px 12px; border-bottom:1px solid rgba(64,128,255,0.08); white-space:nowrap; }
+  tr:hover td { background:rgba(74,142,255,0.05); }
+  tr.selected td { background:rgba(74,142,255,0.12); }
+
+  /* ===== 标签 ===== */
+  .tag {
+    display:inline-block; padding:2px 8px; border-radius:3px; font-size:11px; font-weight:500;
+  }
+  .tag-hot { background:rgba(239,83,80,0.15); color:var(--red); }
+  .tag-warm { background:rgba(255,183,77,0.15); color:var(--orange); }
+  .tag-cold { background:rgba(100,181,246,0.15); color:var(--cold); }
+  .tag-source { background:rgba(0,229,255,0.1); color:var(--accent2); }
+  .tag-core { background:rgba(76,175,147,0.15); color:var(--green); }
+  .tag-temp { background:rgba(158,158,158,0.15); color:#9e9e9e; }
+
+  /* ===== 搜索栏 ===== */
+  .search-bar { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+  .search-bar .input { width:240px; }
+
+  /* ===== 影响分析树 ===== */
+  .impact-tree { font-size:13px; line-height:2; }
+  .impact-tree .root { color:var(--accent2); font-weight:600; font-size:14px; }
+  .impact-tree .level { margin-left:24px; position:relative; padding-left:16px; }
+  .impact-tree .level::before { content:''; position:absolute; left:0; top:8px; width:8px; height:1px; background:var(--border); }
+  .impact-tree .level::after { content:''; position:absolute; left:0; top:0; bottom:12px; width:1px; background:var(--border); }
+  .impact-tree .node { padding:3px 0; cursor:pointer; border-radius:3px; padding-left:6px; }
+  .impact-tree .node:hover { background:rgba(74,142,255,0.08); }
+  .impact-tree .node .type-tag { font-size:10px; margin-left:6px; }
+
+  /* ===== 溯源时间线 ===== */
+  .trace-timeline { position:relative; padding-left:30px; }
+  .trace-timeline::before { content:''; position:absolute; left:12px; top:0; bottom:0; width:2px; background:var(--accent); opacity:0.3; }
+  .trace-node { position:relative; padding:10px 16px; margin-bottom:8px; background:rgba(10,14,39,0.5); border:1px solid var(--border); border-radius:6px; cursor:pointer; transition:all 0.2s; }
+  .trace-node:hover { border-color:var(--accent); }
+  .trace-node::before { content:''; position:absolute; left:-22px; top:16px; width:8px; height:8px; border-radius:50%; background:var(--accent); border:2px solid var(--bg); }
+  .trace-node .layer-tag { position:absolute; right:12px; top:12px; }
+
+  /* ===== 搜索结果下拉 ===== */
+  .search-dropdown {
+    position:absolute; top:100%; left:0; width:100%;
+    background:rgba(16,22,65,0.98); border:1px solid var(--border);
+    border-radius:0 0 6px 6px; z-index:100; max-height:200px; overflow-y:auto; display:none;
+  }
+  .search-dropdown.show { display:block; }
+  .search-dropdown .item { padding:10px 14px; cursor:pointer; font-size:12px; border-bottom:1px solid rgba(64,128,255,0.08); }
+  .search-dropdown .item:hover { background:rgba(74,142,255,0.1); }
+  .search-dropdown .item .highlight { color:var(--accent2); }
+
+  /* ===== 弹窗 ===== */
+  .modal-overlay {
+    display:none; position:fixed; top:0; left:0; width:100%; height:100%;
+    background:rgba(0,0,0,0.6); z-index:200; justify-content:center; align-items:center;
+  }
+  .modal-overlay.show { display:flex; }
+  .modal {
+    background:var(--card-bg); border:1px solid var(--border); border-radius:10px;
+    width:700px; max-height:80vh; overflow-y:auto; padding:24px;
+  }
+  .modal-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; }
+  .modal-header h3 { font-size:16px; color:var(--text-bright); }
+  .modal-close { cursor:pointer; font-size:20px; color:var(--text); width:28px; height:28px; display:flex; align-items:center; justify-content:center; border-radius:4px; }
+  .modal-close:hover { background:rgba(255,255,255,0.1); }
+
+  /* ===== 脉冲动画 ===== */
+  @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.5; } }
+  .pulse { animation:pulse 2s infinite; }
+
+  /* ===== 通知提示 ===== */
+  .toast {
+    position:fixed; top:20px; right:20px; z-index:300;
+    padding:12px 20px; border-radius:6px; font-size:13px;
+    transform:translateX(120%); transition:transform 0.3s;
+  }
+  .toast.show { transform:translateX(0); }
+  .toast.success { background:rgba(76,175,147,0.9); color:#fff; }
+  .toast.warning { background:rgba(255,152,0,0.9); color:#fff; }
+  .toast.error { background:rgba(239,83,80,0.9); color:#fff; }
+
+  /* ===== 图例 ===== */
+  .legend-row { display:flex; gap:16px; align-items:center; font-size:11px; }
+  .legend-dot { width:8px; height:8px; border-radius:50%; display:inline-block; margin-right:4px; }
+
+  /* ===== 审批进度 ===== */
+  .approval-steps { display:flex; gap:0; align-items:center; }
+  .approval-step { display:flex; align-items:center; gap:6px; font-size:11px; }
+  .approval-step .dot { width:10px; height:10px; border-radius:50%; }
+  .approval-step .dot.done { background:var(--green); }
+  .approval-step .dot.active { background:var(--orange); animation:pulse 1.5s infinite; }
+  .approval-step .dot.pending { background:rgba(255,255,255,0.2); }
+  .approval-arrow { margin:0 8px; color:rgba(255,255,255,0.2); }
+
+  /* 隐藏面板 */
+  .hidden-panel { display:none; }
+  .hidden-panel.active { display:flex; flex-direction:column; gap:12px; }
+
+  /* ===== 阈值配置滑块 ===== */
+  .weight-row { margin-bottom:14px; padding:8px 12px; background:rgba(10,14,39,0.4); border-radius:6px; border:1px solid rgba(64,128,255,0.1); }
+  .weight-slider { width:100%; -webkit-appearance:none; appearance:none; height:6px; border-radius:3px; background:linear-gradient(90deg,var(--cold),var(--accent),var(--red)); outline:none; cursor:pointer; margin-top:4px; }
+  .weight-slider::-webkit-slider-thumb { -webkit-appearance:none; width:16px; height:16px; border-radius:50%; background:var(--accent2); border:2px solid var(--bg); cursor:pointer; box-shadow:0 0 6px rgba(0,229,255,0.3); }
+  .hot-range { background:linear-gradient(90deg,var(--orange),var(--red)); }
+  .warm-range { background:linear-gradient(90deg,var(--cold),var(--orange)); }
+</style>
+</head>
+<body>
+
+<canvas id="particles"></canvas>
+
+<div class="shell">
+  <!-- 顶部栏 -->
+  <div class="topbar">
+    <div class="topbar-left">
+      <div class="logo">L</div>
+      <span class="logo-text">数据血缘与冷热监控系统</span>
+    </div>
+    <div class="topbar-right">
+      <span id="live-clock">2026-07-15 10:30:00</span>
+      <span class="tag tag-source">数据更新于 T+1</span>
+      <div class="user-avatar">管</div>
+      <span>数据管理员</span>
+    </div>
+  </div>
+
+  <!-- 导航 -->
+  <div class="nav">
+    <div class="nav-item active" data-tab="dashboard">📊 首页看板</div>
+    <div class="nav-item" data-tab="lineage">🔗 血缘图谱</div>
+    <div class="nav-item" data-tab="impact">⚡ 影响分析</div>
+    <div class="nav-item" data-tab="trace">🔍 溯源追踪</div>
+    <div class="nav-item" data-tab="heat">🌡 冷热度分析</div>
+    <div class="nav-item" data-tab="governance">🛡 冷数据治理<span class="badge pulse">89</span></div>
+    <div class="nav-item" data-tab="discovery">🔎 冷数据自动发现<span class="badge pulse">23</span></div>
+    <div class="nav-item" data-tab="catalog">📋 数据资产目录</div>
+    <div class="nav-item" data-tab="threshold">⚙️ 冷热阈值配置</div>
+    <div class="nav-item" data-tab="scan-config">📡 扫描任务配置</div>
+  </div>
+
+  <!-- ==================== 首页看板 ==================== -->
+  <div class="main hidden-panel active" id="panel-dashboard">
+    <div class="stat-row">
+      <div class="stat-card"><div class="stat-num">3,240</div><div class="stat-label">总表数</div><div class="stat-change up">↑ 12 本周新增</div></div>
+      <div class="stat-card"><div class="stat-num">78,450</div><div class="stat-label">总字段数</div><div class="stat-change up">↑ 230 本周新增</div></div>
+      <div class="stat-card"><div class="stat-num">48.5 TB</div><div class="stat-label">总存储量</div><div class="stat-change up">↑ 1.2 TB 本周新增</div></div>
+      <div class="stat-card"><div class="stat-num" style="color:var(--green)">8.2 TB</div><div class="stat-label">可回收存储</div><div class="stat-change down">↓ 0.3 TB vs 上周</div></div>
+    </div>
+    <div class="row-2">
+      <div class="card" style="flex:1;"><div class="card-title">热温冷分布</div><div class="chart-wrap" id="chart-pie" style="height:260px;"></div></div>
+      <div class="card" style="flex:1.2;"><div class="card-title">各数据源热度对比</div><div class="chart-wrap" id="chart-source-bar" style="height:260px;"></div></div>
+    </div>
+    <div class="row-2">
+      <div class="card" style="flex:1;"><div class="card-title">冷数据趋势（近 6 周）</div><div class="chart-wrap" id="chart-cold-trend" style="height:220px;"></div></div>
+      <div class="card" style="flex:1;"><div class="card-title">⚠️ 待处理冷数据 Top 5</div>
+        <div style="font-size:12px;">
+          <div style="padding:8px 0;border-bottom:1px solid rgba(64,128,255,0.08);cursor:pointer;display:flex;justify-content:space-between;align-items:center;" onclick="switchTab('lineage')">
+            <div><span style="color:var(--red);">●</span> <strong>vehicle_raw_gps_2024</strong><br><span style="color:var(--text);font-size:11px;">820 GB | 240天无访问 | 来源: 车机采集</span></div>
+            <div><button class="btn btn-outline btn-sm">查看</button> <button class="btn btn-danger btn-sm">申请下线</button></div>
+          </div>
+          <div style="padding:8px 0;border-bottom:1px solid rgba(64,128,255,0.08);cursor:pointer;display:flex;justify-content:space-between;align-items:center;">
+            <div><span style="color:var(--red);">●</span> <strong>sdk_lead_backup_23</strong><br><span style="color:var(--text);font-size:11px;">450 GB | 210天无访问 | 来源: SDK上传</span></div>
+            <div><button class="btn btn-outline btn-sm">查看</button> <button class="btn btn-danger btn-sm">申请下线</button></div>
+          </div>
+          <div style="padding:8px 0;border-bottom:1px solid rgba(64,128,255,0.08);cursor:pointer;display:flex;justify-content:space-between;align-items:center;">
+            <div><span style="color:var(--orange);">●</span> <strong>cloud_map_cache_old</strong><br><span style="color:var(--text);font-size:11px;">320 GB | 180天无更新 | 来源: 云端回传</span></div>
+            <div><button class="btn btn-outline btn-sm">查看</button> <button class="btn btn-danger btn-sm">申请下线</button></div>
+          </div>
+          <div style="padding:8px 0;border-bottom:1px solid rgba(64,128,255,0.08);cursor:pointer;display:flex;justify-content:space-between;align-items:center;">
+            <div><span style="color:var(--orange);">●</span> <strong>tmp_experiment_042</strong><br><span style="color:var(--text);font-size:11px;">15 GB | 365天无访问 | 来源: 加工数据</span></div>
+            <div><button class="btn btn-outline btn-sm">查看</button> <button class="btn btn-danger btn-sm">申请下线</button></div>
+          </div>
+          <div style="padding:8px 0;cursor:pointer;display:flex;justify-content:space-between;align-items:center;">
+            <div><span style="color:var(--orange);">●</span> <strong>dwd.inactive_users</strong><br><span style="color:var(--text);font-size:11px;">89 GB | 150天无访问 | 来源: 加工数据</span></div>
+            <div><button class="btn btn-outline btn-sm">查看</button> <button class="btn btn-danger btn-sm">申请下线</button></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== 血缘图谱 ==================== -->
+  <div class="main hidden-panel" id="panel-lineage">
+    <div class="search-bar card" style="padding:12px 20px;">
+      <span style="font-size:13px;color:var(--text);">🔍</span>
+      <input class="input" id="lineage-search" placeholder="搜索表名 / 字段名..." style="width:300px;" oninput="lineageSearch(this.value)">
+      <div style="position:relative;flex:0;">
+        <div class="search-dropdown" id="lineage-dropdown"></div>
+      </div>
+      <div style="flex:1;"></div>
+      <label style="font-size:12px;color:var(--text);display:flex;align-items:center;gap:6px;">
+        方向: <select class="input" style="padding:5px 10px;" id="lineage-direction" onchange="renderLineage()"><option value="both">双向</option><option value="upstream">上游</option><option value="downstream">下游</option></select>
+      </label>
+      <label style="font-size:12px;color:var(--text);display:flex;align-items:center;gap:6px;">
+        层级: <input class="input" type="number" value="5" min="1" max="10" style="width:50px;padding:5px 8px;" id="lineage-depth" onchange="renderLineage()">
+      </label>
+      <label style="font-size:12px;color:var(--text);display:flex;align-items:center;gap:4px;cursor:pointer;">
+        <input type="checkbox" id="show-column" onchange="renderLineage()"> 显示字段级
+      </label>
+      <button class="btn btn-outline btn-sm">导出 PNG</button>
+      <button class="btn btn-outline btn-sm" onclick="renderLineage()">重置</button>
+    </div>
+    <div class="row-2" style="flex:1;min-height:0;">
+      <div class="card" style="flex:1;display:flex;flex-direction:column;">
+        <div class="legend-row" style="margin-bottom:8px;">
+          <span><span class="legend-dot" style="background:#ef5350;"></span>热数据</span>
+          <span><span class="legend-dot" style="background:#ff9800;"></span>温数据</span>
+          <span><span class="legend-dot" style="background:#64b5f6;"></span>冷数据</span>
+          <span><span class="legend-dot" style="background:#9e9e9e;"></span>未评分</span>
+          <span style="margin-left:auto;font-size:11px;">💡 右键节点 → 下钻字段 / 影响分析</span>
+        </div>
+        <div class="chart-wrap" id="chart-lineage" style="flex:1;min-height:500px;"></div>
+      </div>
+      <div class="card" style="width:280px;flex-shrink:0;" id="lineage-detail-panel">
+        <div class="card-title">📋 节点详情</div>
+        <div id="lineage-detail" style="font-size:12px;color:var(--text);">
+          <div style="text-align:center;padding:40px 0;color:rgba(255,255,255,0.3);">点击图谱中的节点<br>查看详细信息</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== 影响分析 ==================== -->
+  <div class="main hidden-panel" id="panel-impact">
+    <div class="search-bar card" style="padding:12px 20px;">
+      <span style="font-size:13px;">🎯 分析目标:</span>
+      <select class="input" style="padding:5px 10px;" id="impact-schema"><option>dwd</option><option>ods</option><option>dws</option><option>ads</option></select>
+      <input class="input" placeholder="表名" value="orders" id="impact-table" style="width:160px;">
+      <span style="font-size:12px;">字段(可选):</span>
+      <input class="input" placeholder="字段名" value="user_id" id="impact-column" style="width:140px;">
+      <label style="font-size:12px;display:flex;align-items:center;gap:4px;cursor:pointer;"><input type="checkbox" id="impact-include-reports" checked> 包含报表</label>
+      <button class="btn btn-primary" onclick="runImpact()">▶ 开始分析</button>
+    </div>
+    <div class="row-2">
+      <div class="card" style="flex:1;">
+        <div class="card-title">影响摘要</div>
+        <div class="stat-row" style="margin-bottom:12px;">
+          <div class="stat-card"><div class="stat-num" id="impact-tables">8</div><div class="stat-label">影响表</div></div>
+          <div class="stat-card"><div class="stat-num" id="impact-cols">23</div><div class="stat-label">影响字段</div></div>
+          <div class="stat-card"><div class="stat-num" id="impact-tasks">12</div><div class="stat-label">影响任务</div></div>
+          <div class="stat-card"><div class="stat-num" id="impact-reports">7</div><div class="stat-label">影响报表</div></div>
+        </div>
+        <div id="impact-severity" style="font-size:13px;padding:8px 12px;background:rgba(239,83,80,0.08);border-radius:4px;margin-bottom:12px;">
+          ⚠️ 严重程度: <span style="color:var(--red);font-weight:600;">🔴 高</span> &nbsp;&nbsp; 最深链路: <strong>4 层</strong>
+        </div>
+      </div>
+    </div>
+    <div class="row-2">
+      <div class="card" style="flex:1.2;">
+        <div class="card-title">影响链路 — 按层级展开</div>
+        <div class="impact-tree" id="impact-tree">
+          <div class="root">● dwd.orders.user_id ← 您要修改的字段</div>
+          <div style="margin-top:8px;">
+            <div style="font-size:13px;color:var(--accent);margin-bottom:4px;">├── 第1层（直接影响）</div>
+            <div class="level">
+              <div class="node" onclick="showDetailModal('dws.user_order_daily.user_id')">● dws.user_order_daily.user_id <span class="tag tag-source type-tag">直接复制</span> <span style="font-size:10px;color:var(--text);">任务: etl_001</span></div>
+              <div class="node" onclick="showDetailModal('dws.user_revenue_monthly.uid')">● dws.user_revenue_monthly.uid <span class="tag tag-warm type-tag">重命名</span> <span style="font-size:10px;color:var(--text);">任务: etl_002</span></div>
+              <div class="node" onclick="showDetailModal('dws.city_rank.user_cnt')">● dws.city_rank.user_cnt <span class="tag tag-hot type-tag">聚合计数</span> <span style="font-size:10px;color:var(--text);">任务: etl_003</span></div>
+            </div>
+          </div>
+          <div style="margin-top:8px;">
+            <div style="font-size:13px;color:var(--accent);margin-bottom:4px;">├── 第2层</div>
+            <div class="level">
+              <div class="node">● ads.dashboard_daily.active_users <span class="tag tag-source type-tag">聚合</span> <span style="font-size:10px;color:var(--text);">任务: etl_004</span></div>
+              <div class="node">● ads.monthly_report.user_growth <span class="tag tag-source type-tag">聚合</span> <span style="font-size:10px;color:var(--text);">任务: etl_005</span></div>
+              <div class="node">● ads.weekly_digest.top_users <span class="tag tag-source type-tag">排序</span> <span style="font-size:10px;color:var(--text);">任务: etl_006</span></div>
+            </div>
+          </div>
+          <div style="margin-top:8px;">
+            <div style="font-size:13px;color:var(--accent);margin-bottom:4px;">├── 第3层（报表）</div>
+            <div class="level">
+              <div class="node">📊 rpt.user_ops_daily <span class="tag tag-hot type-tag">日报</span></div>
+              <div class="node">📊 rpt.revenue_monthly <span class="tag tag-hot type-tag">月报</span></div>
+              <div class="node">📊 dash.executive_overview <span class="tag tag-core type-tag">高管看板</span></div>
+            </div>
+          </div>
+          <div style="margin-top:8px;">
+            <div style="font-size:13px;color:var(--accent);margin-bottom:4px;">└── 第4层（推送/导出）</div>
+            <div class="level">
+              <div class="node">📡 api.push.wechat_summary <span class="tag tag-warm type-tag">每日微信推送</span></div>
+              <div class="node">📧 api.export.email_report <span class="tag tag-warm type-tag">月度邮件报告</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="card" style="flex:0.8;">
+        <div class="card-title">📋 建议评审顺序</div>
+        <div id="impact-suggestions" style="font-size:12px;line-height:2;">
+          <div style="padding:6px 0;">1. 通知 etl_001/002/003 owner 评估改动成本</div>
+          <div style="padding:6px 0;">2. 联系报表 owner：用户运营日报、月度营收看板、高管看板</div>
+          <div style="padding:6px 0;">3. 在测试环境先建 user_id 类型变更的兼容性验证</div>
+          <div style="padding:6px 0;">4. 评估微信推送和邮件报告的字段映射是否需要同步调整</div>
+          <div style="padding:6px 0;">
+            <button class="btn btn-outline btn-sm">📥 导出影响报告</button>
+            <button class="btn btn-primary btn-sm" style="margin-left:8px;">📩 通知责任人</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== 溯源追踪 ==================== -->
+  <div class="main hidden-panel" id="panel-trace">
+    <div class="search-bar card" style="padding:12px 20px;">
+      <span style="font-size:13px;">🔍 追踪目标:</span>
+      <select class="input" style="padding:5px 10px;" id="trace-schema"><option>ads</option><option>dws</option><option>dwd</option><option>ods</option></select>
+      <input class="input" placeholder="表名" value="dashboard_summary" id="trace-table" style="width:180px;">
+      <span style="font-size:12px;">字段:</span>
+      <input class="input" placeholder="字段名" value="active_users" id="trace-column" style="width:140px;">
+      <label style="font-size:12px;display:flex;align-items:center;gap:4px;cursor:pointer;"><input type="checkbox" id="trace-full-chain" checked> 显示完整表达式链</label>
+      <button class="btn btn-primary" onclick="runTrace()">▶ 开始追踪</button>
+    </div>
+    <div class="row-2">
+      <div class="card" style="flex:1.3;">
+        <div class="card-title">数据溯源链路 — 从消费端到原始采集</div>
+        <div style="font-size:11px;color:var(--text);margin-bottom:8px;">终点 ← ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ → 起点</div>
+        <div class="trace-timeline" id="trace-timeline">
+          <div class="trace-node" style="border-color:var(--accent2);">
+            <div class="layer-tag"><span class="tag tag-source">ADS 应用层</span></div>
+            <div style="font-size:14px;font-weight:600;color:var(--accent2);">dashboard_summary.active_users</div>
+            <div style="font-size:11px;margin-top:4px;">类型: BIGINT | 来源: 聚合 COUNT(user_id)</div>
+            <div style="font-size:11px;color:var(--text);">← 追踪起点</div>
+          </div>
+          <div class="trace-node" onclick="showToast('已复制表名: dws.user_order_daily', 'success')">
+            <div class="layer-tag"><span class="tag tag-warm">DWS 汇总层</span></div>
+            <div style="font-size:14px;font-weight:600;">user_order_daily.user_id</div>
+            <div style="font-size:11px;margin-top:4px;">类型: BIGINT | 来源: 直接取自 DWD 层</div>
+            <div style="font-size:11px;color:var(--text);">任务: etl_dws_user_order_daily | Owner: @zhangsan</div>
+          </div>
+          <div class="trace-node" onclick="navigateToLineage('dwd.orders.user_id')">
+            <div class="layer-tag"><span class="tag tag-hot">DWD 明细层</span></div>
+            <div style="font-size:14px;font-weight:600;">orders.user_id</div>
+            <div style="font-size:11px;margin-top:4px;">类型: BIGINT | 来源: 清洗后直接入库</div>
+            <div style="font-size:11px;color:var(--text);">清洗规则: IFNULL(raw_uid, 'UNKNOWN')</div>
+          </div>
+          <div class="trace-node" style="border-color:var(--orange);" onclick="showToast('⚠️ 该层发现脏数据: 空值率 12.3%, 含中文ID占比 0.5%', 'warning')">
+            <div class="layer-tag"><span class="tag tag-cold">ODS 原始层</span></div>
+            <div style="font-size:14px;font-weight:600;">sdk_order_raw.raw_uid</div>
+            <div style="font-size:11px;margin-top:4px;">类型: VARCHAR(64) | 来源: 第三方 SDK 上传</div>
+            <div style="font-size:11px;color:var(--red);">⚠️ 空值率: 12.3% | 异常值: 含中文ID 0.5%</div>
+          </div>
+          <div class="trace-node" style="border-color:var(--green);">
+            <div class="layer-tag"><span class="tag tag-core">数据源</span></div>
+            <div style="font-size:14px;font-weight:600;">📡 第三方 SDK — 线索管理系统</div>
+            <div style="font-size:11px;margin-top:4px;">上传方式: HTTP API / 每 5 分钟批量</div>
+            <div style="font-size:11px;color:var(--text);">Owner: 线索运营团队</div>
+          </div>
+        </div>
+      </div>
+      <div class="card" style="flex:0.7;">
+        <div class="card-title">🔍 链路统计</div>
+        <div style="font-size:12px;line-height:2.5;">
+          <div>经过层级: <strong>4 层</strong></div>
+          <div>经历任务: <strong>3 个</strong></div>
+          <div>字段变换: <strong>清洗 → 直接 → 聚合</strong></div>
+          <div>源头数据源: <span class="tag tag-core">sdk_upload:business_ops</span></div>
+          <div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border);">
+            <div style="color:var(--orange);">⚠️ 数据质量风险</div>
+            <div style="font-size:11px;color:var(--text);">● ODS 层空值率 12.3%（偏高）</div>
+            <div style="font-size:11px;color:var(--text);">● 上游清洗规则 IFNULL 将空值转为 'UNKNOWN'</div>
+            <div style="font-size:11px;color:var(--text);">● 建议: 与线索运营团队确认为何 raw_uid 存在 12% 空值</div>
+          </div>
+        </div>
+        <div style="margin-top:16px;">
+          <button class="btn btn-outline btn-sm">📥 导出溯源报告</button>
+          <button class="btn btn-outline btn-sm" style="margin-left:8px;" onclick="switchTab('impact')">⚡ 进行影响分析 →</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== 冷热度分析 ==================== -->
+  <div class="main hidden-panel" id="panel-heat">
+    <div class="search-bar card" style="padding:12px 20px;">
+      <span style="font-size:12px;">数据来源:</span>
+      <select class="input" style="padding:5px 10px;" id="heat-source-filter" onchange="renderHeatTable()">
+        <option value="all">全部</option><option value="sdk_upload">SDK上传</option><option value="vehicle_collect">车机采集</option><option value="cloud_sync">云端回传</option><option value="processed">加工数据</option>
+      </select>
+      <span style="font-size:12px;">热度等级:</span>
+      <select class="input" style="padding:5px 10px;" id="heat-level-filter" onchange="renderHeatTable()">
+        <option value="all">全部</option><option value="hot">🔥 热数据</option><option value="warm">🌤 温数据</option><option value="cold">❄️ 冷数据</option>
+      </select>
+      <span style="font-size:12px;">排序:</span>
+      <select class="input" style="padding:5px 10px;" id="heat-sort" onchange="renderHeatTable()">
+        <option value="score">热度分</option><option value="size">表大小</option><option value="access">最近访问</option>
+      </select>
+      <input class="input" placeholder="搜索表名..." id="heat-search" style="width:180px;" oninput="renderHeatTable()">
+    </div>
+    <div class="row-2">
+      <div class="card" style="flex:1.5;display:flex;flex-direction:column;">
+        <div class="card-title">冷热度排行</div>
+        <div class="table-wrap" style="flex:1;overflow-y:auto;max-height:340px;" id="heat-table-container">
+          <table id="heat-table">
+            <thead><tr><th>排序</th><th>表名</th><th>分数</th><th>等级</th><th>频率(日)</th><th>最近访问</th><th>下游</th><th>大小</th><th>来源</th><th>操作</th></tr></thead>
+            <tbody id="heat-table-body"></tbody>
+          </table>
+        </div>
+      </div>
+      <div class="card" style="flex:1;display:flex;flex-direction:column;" id="heat-detail-panel">
+        <div class="card-title">🔥 热度详情 — <span id="heat-detail-name">dws.user_order_daily</span></div>
+        <div id="heat-detail-content">
+          <div style="font-size:24px;font-weight:700;color:var(--red);margin-bottom:4px;">96 <span style="font-size:13px;color:var(--text);">/ 100 (热数据)</span></div>
+          <div class="chart-wrap" id="chart-radar" style="height:200px;"></div>
+          <div style="margin-top:8px;">
+            <div class="card-title" style="font-size:12px;">热度趋势（近 5 周）</div>
+            <div class="chart-wrap" id="chart-heat-trend" style="height:120px;"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== 冷数据治理 ==================== -->
+  <div class="main hidden-panel" id="panel-governance">
+    <div class="card" style="background:rgba(239,83,80,0.05);border-color:rgba(239,83,80,0.3);">
+      <div class="stat-row" style="margin-bottom:0;">
+        <div class="stat-card" style="background:transparent;border:none;padding:8px 16px;"><div class="stat-num" style="font-size:24px;color:var(--orange);">23</div><div class="stat-label">新发现冷数据</div></div>
+        <div class="stat-card" style="background:transparent;border:none;padding:8px 16px;"><div class="stat-num" style="font-size:24px;color:var(--red);">156</div><div class="stat-label">持续冷数据 (≥2周期)</div></div>
+        <div class="stat-card" style="background:transparent;border:none;padding:8px 16px;"><div class="stat-num" style="font-size:24px;color:var(--accent2);">89</div><div class="stat-label">建议下线</div></div>
+        <div class="stat-card" style="background:transparent;border:none;padding:8px 16px;"><div class="stat-num" style="font-size:24px;color:var(--green);">6.8 TB</div><div class="stat-label">可回收存储</div></div>
+      </div>
+      <div style="font-size:11px;color:var(--text);">扫描时间: 2026-07-15 02:00 | 下次扫描: 2026-07-16 02:00</div>
+    </div>
+    <div class="card" style="flex:1;display:flex;flex-direction:column;">
+      <div class="card-title" style="display:flex;justify-content:space-between;align-items:center;">
+        <span>建议下线清单</span>
+        <div style="font-size:12px;font-weight:400;">
+          <label style="cursor:pointer;margin-right:12px;"><input type="checkbox" id="select-all-cold" onchange="toggleSelectAll(this)"> 全选</label>
+          已选 <span id="selected-count" style="color:var(--accent2);">0</span> 张表 |
+          预计回收 <span id="selected-size" style="color:var(--accent2);">0</span> TB
+        </div>
+      </div>
+      <div class="table-wrap" style="flex:1;overflow-y:auto;max-height:380px;">
+        <table>
+          <thead><tr><th style="width:30px;"></th><th>表名</th><th>大小</th><th>无访问天数</th><th>依赖</th><th>来源</th><th>Owner</th><th>最后更新</th><th>建议</th><th>操作</th></tr></thead>
+          <tbody id="governance-table-body"></tbody>
+        </table>
+      </div>
+      <div style="margin-top:12px;display:flex;gap:8px;">
+        <button class="btn btn-primary" onclick="batchApplyOffline()">📋 批量申请下线</button>
+        <button class="btn btn-outline btn-sm">📥 导出清单</button>
+        <button class="btn btn-outline btn-sm">📩 通知 Owner</button>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">审批工作流</div>
+      <div style="font-size:12px;padding:10px 14px;background:rgba(10,14,39,0.5);border:1px solid var(--border);border-radius:6px;margin-bottom:8px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+          <strong>申请 #42: 归档 3 张表 (合计 1.2 TB)</strong>
+          <span class="tag tag-warm">审批中</span>
+        </div>
+        <div style="font-size:11px;color:var(--text);margin-bottom:6px;">提交人: @zhangsan | 提交时间: 2026-07-14 | 涉及: raw_gps_2023, backup_leads_Q3, tmp_calc_12</div>
+        <div class="approval-steps">
+          <div class="approval-step"><span class="dot done"></span> 直属上级</div><span class="approval-arrow">→</span>
+          <div class="approval-step"><span class="dot active"></span> 数据治理</div><span class="approval-arrow">→</span>
+          <div class="approval-step"><span class="dot pending"></span> 管理员</div>
+        </div>
+      </div>
+      <div style="font-size:12px;padding:10px 14px;background:rgba(10,14,39,0.5);border:1px solid var(--border);border-radius:6px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+          <strong>申请 #41: 删除实验临时表 (15 GB)</strong>
+          <span class="tag tag-core">已通过</span>
+        </div>
+        <div style="font-size:11px;color:var(--text);">提交人: @lisi | 提交时间: 2026-07-10 | 涉及: tmp_experiment_041</div>
+        <div class="approval-steps" style="margin-top:4px;">
+          <div class="approval-step"><span class="dot done"></span> 直属上级</div><span class="approval-arrow">→</span>
+          <div class="approval-step"><span class="dot done"></span> 数据治理</div><span class="approval-arrow">→</span>
+          <div class="approval-step"><span class="dot done"></span> 管理员</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== 数据资产目录 ==================== -->
+  <div class="main hidden-panel" id="panel-catalog">
+    <div class="stat-row">
+      <div class="stat-card"><div class="stat-num" style="font-size:24px;">3,240</div><div class="stat-label">总资产项</div></div>
+      <div class="stat-card"><div class="stat-num" style="font-size:24px;">78,450</div><div class="stat-label">总字段数</div></div>
+      <div class="stat-card"><div class="stat-num" style="font-size:24px;color:var(--accent2);">42</div><div class="stat-label">已标注 Owner</div></div>
+      <div class="stat-card"><div class="stat-num" style="font-size:24px;color:var(--orange);">156</div><div class="stat-label">未标注表</div></div>
+    </div>
+    <div class="search-bar card" style="padding:12px 20px;">
+      <span style="font-size:13px;">🔍</span>
+      <input class="input" placeholder="搜索表名 / 字段名 / Owner..." style="width:280px;" id="catalog-search" oninput="renderCatalogTable()">
+      <label style="font-size:12px;color:var(--text);display:flex;align-items:center;gap:4px;">
+        来源: <select class="input" style="padding:5px 10px;" id="catalog-source-filter" onchange="renderCatalogTable()">
+          <option value="all">全部</option><option value="sdk_upload">SDK上传</option><option value="vehicle_collect">车机采集</option><option value="cloud_sync">云端回传</option><option value="processed">加工数据</option>
+        </select>
+      </label>
+      <label style="font-size:12px;color:var(--text);display:flex;align-items:center;gap:4px;">
+        热度: <select class="input" style="padding:5px 10px;" id="catalog-heat-filter" onchange="renderCatalogTable()">
+          <option value="all">全部</option><option value="hot">热数据</option><option value="warm">温数据</option><option value="cold">冷数据</option>
+        </select>
+      </label>
+      <label style="font-size:12px;color:var(--text);display:flex;align-items:center;gap:4px;">
+        层级: <select class="input" style="padding:5px 10px;" id="catalog-layer-filter" onchange="renderCatalogTable()">
+          <option value="all">全部</option><option value="ODS">ODS</option><option value="DWD">DWD</option><option value="DWS">DWS</option><option value="ADS">ADS</option><option value="DIM">DIM</option>
+        </select>
+      </label>
+      <div style="flex:1;"></div>
+      <button class="btn btn-outline btn-sm" onclick="exportCatalog()">📥 导出资产清单</button>
+      <button class="btn btn-outline btn-sm" onclick="renderCatalogStats()">🔄 刷新统计</button>
+    </div>
+    <div class="row-2" style="flex:1;min-height:0;">
+      <div class="card" style="flex:1;display:flex;flex-direction:column;">
+        <div class="card-title">资产清单</div>
+        <div class="table-wrap" style="flex:1;overflow-y:auto;max-height:420px;">
+          <table>
+            <thead><tr>
+              <th>表名</th><th>层级</th><th>字段数</th><th>Owner</th><th>来源</th>
+              <th style="cursor:pointer;" onclick="sortCatalog('score')">热度 ▾</th>
+              <th>下游数</th><th>更新频率</th><th>最后更新</th><th>操作</th>
+            </tr></thead>
+            <tbody id="catalog-table-body"></tbody>
+          </table>
+        </div>
+        <div style="margin-top:8px;display:flex;justify-content:space-between;align-items:center;font-size:11px;color:var(--text);">
+          <span>共 <strong id="catalog-total" style="color:var(--text-bright);">0</strong> 条记录</span>
+          <span>💡 点击行展开字段级详情</span>
+        </div>
+      </div>
+      <div class="card" style="width:340px;flex-shrink:0;" id="catalog-detail-panel">
+        <div class="card-title">📋 资产详情</div>
+        <div id="catalog-detail" style="font-size:12px;color:var(--text);">
+          <div style="text-align:center;padding:40px 0;color:rgba(255,255,255,0.3);">点击左侧资产行<br>查看字段级详情</div>
+        </div>
+      </div>
+    </div>
+    <div class="row-2">
+      <div class="card" style="flex:1;"><div class="card-title">资产来源分布</div><div class="chart-wrap" id="chart-catalog-source" style="height:180px;"></div></div>
+      <div class="card" style="flex:1;"><div class="card-title">各层级资产热度分布</div><div class="chart-wrap" id="chart-catalog-layer-heat" style="height:180px;"></div></div>
+    </div>
+  </div>
+
+  <!-- ==================== 冷热阈值配置 ==================== -->
+  <div class="main hidden-panel" id="panel-threshold">
+    <div class="card" style="background:rgba(0,229,255,0.03);border-color:rgba(0,229,255,0.2);">
+      <div style="font-size:12px;color:var(--accent2);display:flex;align-items:center;gap:8px;">
+        <span>⚠️</span> 阈值配置直接影响冷热数据分类结果，修改后将在下次 T+1 评分更新时生效。当前评分基于以下配置计算。
+      </div>
+    </div>
+    <div class="row-2">
+      <!-- 左侧：维度权重配置 -->
+      <div class="card" style="flex:1;">
+        <div class="card-title" style="display:flex;justify-content:space-between;align-items:center;">
+          <span>六维权重配置</span>
+          <span style="font-size:12px;font-weight:400;color:var(--text);">合计: <strong id="weight-sum" style="color:var(--accent2);">100</strong>%</span>
+        </div>
+        <div style="font-size:12px;">
+          <div class="weight-row">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+              <span>📊 访问频率</span>
+              <span style="color:var(--accent2);"><span id="w1-val">30</span>%</span>
+            </div>
+            <input type="range" min="0" max="60" value="30" class="weight-slider" id="w1" oninput="updateWeights()">
+            <div style="font-size:10px;color:var(--text);margin-top:2px;">统计近 30 天日均查询次数</div>
+          </div>
+          <div class="weight-row">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+              <span>🕐 最近访问时间</span>
+              <span style="color:var(--accent2);"><span id="w2-val">25</span>%</span>
+            </div>
+            <input type="range" min="0" max="60" value="25" class="weight-slider" id="w2" oninput="updateWeights()">
+            <div style="font-size:10px;color:var(--text);margin-top:2px;">最近一次查询距今时间</div>
+          </div>
+          <div class="weight-row">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+              <span>🔗 下游依赖数</span>
+              <span style="color:var(--accent2);"><span id="w3-val">20</span>%</span>
+            </div>
+            <input type="range" min="0" max="60" value="20" class="weight-slider" id="w3" oninput="updateWeights()">
+            <div style="font-size:10px;color:var(--text);margin-top:2px;">下游 ETL 任务 / 报表 / API 数量</div>
+          </div>
+          <div class="weight-row">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+              <span>🔄 数据新鲜度</span>
+              <span style="color:var(--accent2);"><span id="w4-val">10</span>%</span>
+            </div>
+            <input type="range" min="0" max="40" value="10" class="weight-slider" id="w4" oninput="updateWeights()">
+            <div style="font-size:10px;color:var(--text);margin-top:2px;">更新频率（实时 > 每小时 > 每日 > 每周）</div>
+          </div>
+          <div class="weight-row">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+              <span>🏷 业务属性标签</span>
+              <span style="color:var(--accent2);"><span id="w5-val">10</span>%</span>
+            </div>
+            <input type="range" min="0" max="40" value="10" class="weight-slider" id="w5" oninput="updateWeights()">
+            <div style="font-size:10px;color:var(--text);margin-top:2px;">核心业务 / 辅助业务 / 实验临时</div>
+          </div>
+          <div class="weight-row">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+              <span>💰 存储成本占比</span>
+              <span style="color:var(--accent2);"><span id="w6-val">5</span>%</span>
+            </div>
+            <input type="range" min="0" max="30" value="5" class="weight-slider" id="w6" oninput="updateWeights()">
+            <div style="font-size:10px;color:var(--text);margin-top:2px;">表大小 / 该层级总大小</div>
+          </div>
+        </div>
+        <div style="margin-top:10px;display:flex;gap:8px;">
+          <button class="btn btn-outline btn-sm" onclick="resetWeights()">↺ 恢复默认</button>
+          <button class="btn btn-outline btn-sm" onclick="loadPreset('high_freq')">📋 高频优先</button>
+          <button class="btn btn-outline btn-sm" onclick="loadPreset('balanced')">📋 均衡模式</button>
+          <button class="btn btn-outline btn-sm" onclick="loadPreset('cost_aware')">📋 成本敏感</button>
+        </div>
+      </div>
+
+      <!-- 右侧：冷热分值区间 + 预览 -->
+      <div class="card" style="flex:1;">
+        <div class="card-title">冷热分值区间</div>
+        <div style="font-size:12px;">
+          <div style="margin-bottom:16px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+              <span style="color:var(--red);">🔥 热数据阈值</span>
+              <span style="color:var(--accent2);">≥ <span id="hot-threshold-val">70</span> 分</span>
+            </div>
+            <input type="range" min="50" max="90" value="70" class="weight-slider hot-range" id="hot-threshold" oninput="updateThresholds()">
+          </div>
+          <div style="margin-bottom:16px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+              <span style="color:var(--orange);">🌤 温数据阈值</span>
+              <span style="color:var(--accent2);"><span id="warm-threshold-min-val">30</span> – <span id="warm-threshold-max-val">69</span> 分</span>
+            </div>
+            <div style="display:flex;gap:12px;">
+              <input type="range" min="10" max="50" value="30" class="weight-slider warm-range" id="warm-threshold-min" oninput="updateThresholds()" style="flex:1;">
+              <span style="color:var(--text);font-size:11px;">至</span>
+              <span style="color:var(--text);font-size:11px;min-width:40px;text-align:center;">= 热线-1</span>
+            </div>
+          </div>
+          <div style="margin-bottom:0;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+              <span style="color:var(--cold);">❄️ 冷数据阈值</span>
+              <span style="color:var(--accent2);">< <span id="cold-threshold-val">30</span> 分</span>
+            </div>
+          </div>
+          <div style="margin-top:16px;padding:12px;background:rgba(10,14,39,0.5);border:1px solid var(--border);border-radius:6px;">
+            <div class="card-title" style="font-size:13px;">📊 预览：当前配置下热温冷分布</div>
+            <div style="display:flex;gap:12px;margin-top:8px;">
+              <div style="flex:1;text-align:center;">
+                <div style="font-size:22px;font-weight:700;color:var(--red);" id="preview-hot">21%</div>
+                <div style="font-size:10px;color:var(--text);">热数据</div>
+              </div>
+              <div style="flex:1;text-align:center;">
+                <div style="font-size:22px;font-weight:700;color:var(--orange);" id="preview-warm">38%</div>
+                <div style="font-size:10px;color:var(--text);">温数据</div>
+              </div>
+              <div style="flex:1;text-align:center;">
+                <div style="font-size:22px;font-weight:700;color:var(--cold);" id="preview-cold">41%</div>
+                <div style="font-size:10px;color:var(--text);">冷数据</div>
+              </div>
+            </div>
+            <div class="chart-wrap" id="chart-threshold-preview" style="height:100px;margin-top:8px;"></div>
+          </div>
+        </div>
+        <div style="margin-top:12px;display:flex;gap:8px;">
+          <button class="btn btn-primary" onclick="saveThreshold()">💾 保存配置</button>
+          <button class="btn btn-outline btn-sm" onclick="resetThresholds()">↺ 恢复默认</button>
+          <button class="btn btn-outline btn-sm">📜 查看变更历史</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 业务线独立配置 -->
+    <div class="card">
+      <div class="card-title" style="display:flex;justify-content:space-between;align-items:center;">
+        <span>按业务线独立配置</span>
+        <button class="btn btn-outline btn-sm" onclick="showToast('已添加新业务线配置','success')">+ 新增业务线</button>
+      </div>
+      <div class="table-wrap" style="max-height:200px;overflow-y:auto;">
+        <table>
+          <thead><tr><th>业务线</th><th>热阈值</th><th>温区间</th><th>冷阈值</th><th>权重配置</th><th>状态</th><th>最后修改人</th><th>修改时间</th><th>操作</th></tr></thead>
+          <tbody>
+            <tr>
+              <td style="color:var(--accent2);">📋 默认全局</td>
+              <td>≥ 70</td><td>30 – 69</td><td>&lt; 30</td>
+              <td><span style="font-size:10px;">频率30% 时间25% 依赖20% 新鲜度10% 业务10% 成本5%</span></td>
+              <td><span class="tag tag-core">生效中</span></td>
+              <td>@admin</td><td>2026-07-01</td>
+              <td><button class="btn btn-outline btn-sm" onclick="showToast('已进入编辑模式','success')">编辑</button></td>
+            </tr>
+            <tr>
+              <td style="color:var(--accent2);">🚗 车联网数据</td>
+              <td>≥ 75</td><td>35 – 74</td><td>&lt; 35</td>
+              <td><span style="font-size:10px;">频率35% 时间20% 依赖15% 新鲜度15% 业务10% 成本5%</span></td>
+              <td><span class="tag tag-core">生效中</span></td>
+              <td>@wangwu</td><td>2026-06-28</td>
+              <td><button class="btn btn-outline btn-sm" onclick="showToast('已进入编辑模式','success')">编辑</button> <button class="btn btn-danger btn-sm">删除</button></td>
+            </tr>
+            <tr>
+              <td style="color:var(--accent2);">📱 用户运营数据</td>
+              <td>≥ 65</td><td>25 – 64</td><td>&lt; 25</td>
+              <td><span style="font-size:10px;">频率25% 时间30% 依赖25% 新鲜度10% 业务5% 成本5%</span></td>
+              <td><span class="tag tag-core">生效中</span></td>
+              <td>@zhangsan</td><td>2026-07-12</td>
+              <td><button class="btn btn-outline btn-sm" onclick="showToast('已进入编辑模式','success')">编辑</button> <button class="btn btn-danger btn-sm">删除</button></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== 冷数据自动发现 ==================== -->
+  <div class="main hidden-panel" id="panel-discovery">
+    <!-- 扫描概览卡片 -->
+    <div class="card" style="background:rgba(0,229,255,0.03);border-color:rgba(0,229,255,0.2);">
+      <div class="stat-row" style="margin-bottom:0;">
+        <div class="stat-card" style="background:transparent;border:none;padding:8px 16px;">
+          <div class="stat-num" style="font-size:24px;color:var(--accent2);">每周日 02:00</div>
+          <div class="stat-label">扫描周期</div>
+        </div>
+        <div class="stat-card" style="background:transparent;border:none;padding:8px 16px;">
+          <div class="stat-num" style="font-size:24px;">2026-07-13 02:00</div>
+          <div class="stat-label">上次扫描</div>
+        </div>
+        <div class="stat-card" style="background:transparent;border:none;padding:8px 16px;">
+          <div class="stat-num" style="font-size:24px;color:var(--orange);">23</div>
+          <div class="stat-label">本次新发现冷表</div>
+        </div>
+        <div class="stat-card" style="background:transparent;border:none;padding:8px 16px;">
+          <div class="stat-num" style="font-size:24px;color:var(--red);">累计 312</div>
+          <div class="stat-label">历史累计冷数据</div>
+        </div>
+      </div>
+      <div style="font-size:11px;color:var(--text);display:flex;justify-content:space-between;align-items:center;">
+        <span>下次扫描: 2026-07-20 02:00（5天后）</span>
+        <span style="display:flex;gap:8px;">
+          <button class="btn btn-primary btn-sm" onclick="runDiscoveryScan()">▶ 立即执行扫描</button>
+          <button class="btn btn-outline btn-sm" onclick="pushToGovernance()">📤 推送至治理模块</button>
+        </span>
+      </div>
+    </div>
+
+    <!-- 检测规则说明 -->
+    <div class="card">
+      <div class="card-title">检测规则 — "三无"冷数据判定标准</div>
+      <div style="display:flex;gap:16px;font-size:12px;">
+        <div style="flex:1;padding:16px;background:rgba(239,83,80,0.06);border:1px solid rgba(239,83,80,0.2);border-radius:8px;">
+          <div style="font-size:28px;margin-bottom:8px;">🚫</div>
+          <div style="font-weight:600;color:var(--red);margin-bottom:4px;">零访问 · 无读取</div>
+          <div style="color:var(--text);line-height:1.8;">
+            连续 <strong style="color:var(--text-bright);">≥ 90 天</strong> 无任何查询/读取记录<br>
+            <span style="font-size:10px;">统计来源: 查询日志 + 审计日志</span>
+          </div>
+        </div>
+        <div style="flex:1;padding:16px;background:rgba(239,83,80,0.06);border:1px solid rgba(239,83,80,0.2);border-radius:8px;">
+          <div style="font-size:28px;margin-bottom:8px;">🔗</div>
+          <div style="font-weight:600;color:var(--red);margin-bottom:4px;">零依赖 · 无下游</div>
+          <div style="color:var(--text);line-height:1.8;">
+            无任何下游 ETL 任务、报表、API 依赖<br>
+            <span style="font-size:10px;">统计来源: 血缘图谱 DAG 出度 = 0</span>
+          </div>
+        </div>
+        <div style="flex:1;padding:16px;background:rgba(239,83,80,0.06);border:1px solid rgba(239,83,80,0.2);border-radius:8px;">
+          <div style="font-size:28px;margin-bottom:8px;">⏸️</div>
+          <div style="font-weight:600;color:var(--red);margin-bottom:4px;">零更新 · 无写入</div>
+          <div style="color:var(--text);line-height:1.8;">
+            连续 <strong style="color:var(--text-bright);">≥ 90 天</strong> 无数据更新 / 分区写入<br>
+            <span style="font-size:10px;">统计来源: 元数据 last_modified_time</span>
+          </div>
+        </div>
+      </div>
+      <div style="margin-top:12px;padding:8px 14px;background:rgba(255,183,77,0.08);border:1px solid rgba(255,183,77,0.2);border-radius:6px;font-size:11px;color:var(--orange);">
+        ⚠️ 判定逻辑: 同时满足以上 3 个条件 → 标记为"建议下线"；满足 2 个条件 → 标记为"观察中"；满足 0-1 个条件 → 排除
+      </div>
+    </div>
+
+    <!-- 发现结果表格 -->
+    <div class="card" style="flex:1;display:flex;flex-direction:column;">
+      <div class="card-title" style="display:flex;justify-content:space-between;align-items:center;">
+        <span>本次扫描结果 — 新发现冷数据表 <span style="color:var(--orange);font-weight:700;">23</span> 张</span>
+        <div style="font-size:12px;font-weight:400;">
+          <label style="cursor:pointer;margin-right:12px;"><input type="checkbox" id="discovery-select-all" onchange="toggleDiscoverySelectAll(this)"> 全选</label>
+          已选 <span id="discovery-selected-count" style="color:var(--accent2);">0</span> 张 |
+          预计回收 <span id="discovery-selected-size" style="color:var(--accent2);">0</span> GB
+        </div>
+      </div>
+      <div class="search-bar" style="margin-bottom:10px;">
+        <span style="font-size:12px;">筛选:</span>
+        <select class="input" style="padding:5px 10px;" id="discovery-match-filter" onchange="renderDiscoveryTable()">
+          <option value="all">全部匹配度</option><option value="3">三无(建议下线)</option><option value="2">二无(观察中)</option>
+        </select>
+        <select class="input" style="padding:5px 10px;" id="discovery-size-filter" onchange="renderDiscoveryTable()">
+          <option value="all">全部大小</option><option value="large">&gt; 100 GB</option><option value="medium">10–100 GB</option><option value="small">&lt; 10 GB</option>
+        </select>
+        <input class="input" placeholder="搜索表名..." id="discovery-search" style="width:180px;" oninput="renderDiscoveryTable()">
+        <div style="flex:1;"></div>
+        <button class="btn btn-outline btn-sm" onclick="batchOfflineDiscovery()">📋 批量申请下线</button>
+        <button class="btn btn-outline btn-sm">📥 导出清单</button>
+      </div>
+      <div class="table-wrap" style="flex:1;overflow-y:auto;max-height:340px;">
+        <table>
+          <thead><tr>
+            <th style="width:30px;"></th><th>表名</th><th>大小</th>
+            <th>无访问(天)</th><th>无依赖</th><th>无更新(天)</th>
+            <th>匹配度</th><th>来源</th><th>Owner</th><th>建议</th><th>操作</th>
+          </tr></thead>
+          <tbody id="discovery-table-body"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- 趋势图 + 历史记录 -->
+    <div class="row-2">
+      <div class="card" style="flex:1.2;">
+        <div class="card-title">冷数据发现趋势（近 8 周）</div>
+        <div class="chart-wrap" id="chart-discovery-trend" style="height:220px;"></div>
+      </div>
+      <div class="card" style="flex:0.8;">
+        <div class="card-title">📜 近 3 次扫描历史</div>
+        <div style="font-size:12px;">
+          <div style="padding:10px 12px;margin-bottom:8px;background:rgba(10,14,39,0.5);border:1px solid var(--border);border-radius:6px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+              <strong style="color:var(--accent2);">#12 扫描</strong>
+              <span class="tag tag-source">2026-07-13 02:00</span>
+            </div>
+            <div style="color:var(--text);font-size:11px;line-height:1.8;">
+              扫描表数: <strong style="color:var(--text-bright);">3,240</strong> |
+              新发现: <strong style="color:var(--orange);">23</strong> |
+              持续冷: <strong style="color:var(--red);">156</strong> |
+              已下线: <strong style="color:var(--green);">12</strong>
+            </div>
+          </div>
+          <div style="padding:10px 12px;margin-bottom:8px;background:rgba(10,14,39,0.5);border:1px solid var(--border);border-radius:6px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+              <strong style="color:var(--accent2);">#11 扫描</strong>
+              <span class="tag tag-source">2026-07-06 02:00</span>
+            </div>
+            <div style="color:var(--text);font-size:11px;line-height:1.8;">
+              扫描表数: <strong style="color:var(--text-bright);">3,215</strong> |
+              新发现: <strong style="color:var(--orange);">18</strong> |
+              持续冷: <strong style="color:var(--red);">145</strong> |
+              已下线: <strong style="color:var(--green);">8</strong>
+            </div>
+          </div>
+          <div style="padding:10px 12px;background:rgba(10,14,39,0.5);border:1px solid var(--border);border-radius:6px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+              <strong style="color:var(--accent2);">#10 扫描</strong>
+              <span class="tag tag-source">2026-06-29 02:00</span>
+            </div>
+            <div style="color:var(--text);font-size:11px;line-height:1.8;">
+              扫描表数: <strong style="color:var(--text-bright);">3,198</strong> |
+              新发现: <strong style="color:var(--orange);">31</strong> |
+              持续冷: <strong style="color:var(--red);">135</strong> |
+              已下线: <strong style="color:var(--green);">6</strong>
+            </div>
+          </div>
+        </div>
+        <div style="margin-top:12px;text-align:center;">
+          <button class="btn btn-outline btn-sm" onclick="showToast('📜 已加载全部扫描历史','success')">查看全部历史 →</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== 扫描任务配置 ==================== -->
+  <div class="main hidden-panel" id="panel-scan-config">
+    <!-- 提示条 -->
+    <div class="card" style="background:rgba(0,229,255,0.03);border-color:rgba(0,229,255,0.2);">
+      <div style="font-size:12px;color:var(--accent2);display:flex;align-items:center;gap:8px;">
+        <span>📡</span> 扫描任务调度配置管理 — 控制血缘采集与冷数据发现任务的执行周期、数据源范围和容错策略
+      </div>
+    </div>
+
+    <div class="row-2">
+      <!-- 左侧：血缘采集调度 -->
+      <div class="card" style="flex:1;">
+        <div class="card-title" style="display:flex;justify-content:space-between;align-items:center;">
+          <span>🔗 血缘采集调度</span>
+          <span class="tag tag-core" id="lineage-scan-status">运行中</span>
+        </div>
+        <div style="font-size:12px;">
+          <!-- 调度周期 -->
+          <div class="weight-row">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+              <span>⏱ 调度周期</span>
+              <select class="input" style="padding:4px 8px;font-size:12px;" id="lineage-cron-preset" onchange="updateLineageCron()">
+                <option value="0 2 * * *" selected>每天 02:00</option>
+                <option value="0 */6 * * *">每 6 小时</option>
+                <option value="0 */12 * * *">每 12 小时</option>
+                <option value="0 2 * * 0">每周日 02:00</option>
+                <option value="custom">自定义 Cron</option>
+              </select>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">
+              <span style="color:var(--text);font-size:11px;min-width:50px;">Cron:</span>
+              <input class="input" style="flex:1;padding:4px 8px;font-size:12px;font-family:monospace;" value="0 2 * * *" id="lineage-cron-input" placeholder="0 2 * * *">
+            </div>
+            <div style="font-size:10px;color:var(--text);">下次执行: <strong id="lineage-next-run" style="color:var(--accent2);">2026-07-16 02:00</strong></div>
+          </div>
+          <!-- 数据源范围 -->
+          <div class="weight-row">
+            <div style="font-weight:600;color:var(--text-bright);margin-bottom:8px;">📂 数据源范围</div>
+            <div style="margin-bottom:8px;">
+              <label style="cursor:pointer;margin-right:16px;"><input type="radio" name="lineage-scope" value="all" checked onchange="updateLineageScope()"> 全量扫描（所有数据源）</label>
+              <label style="cursor:pointer;"><input type="radio" name="lineage-scope" value="custom" onchange="updateLineageScope()"> 指定数据源</label>
+            </div>
+            <div id="lineage-datasource-list" style="display:none;">
+              <div style="display:flex;flex-wrap:wrap;gap:6px;">
+                <label style="cursor:pointer;font-size:11px;padding:3px 8px;background:rgba(74,142,255,0.08);border:1px solid var(--border);border-radius:4px;"><input type="checkbox" checked> MySQL — 数据平台主库</label>
+                <label style="cursor:pointer;font-size:11px;padding:3px 8px;background:rgba(74,142,255,0.08);border:1px solid var(--border);border-radius:4px;"><input type="checkbox" checked> PostgreSQL — 车联网库</label>
+                <label style="cursor:pointer;font-size:11px;padding:3px 8px;background:rgba(74,142,255,0.08);border:1px solid var(--border);border-radius:4px;"><input type="checkbox" checked> ClickHouse — 日志分析库</label>
+                <label style="cursor:pointer;font-size:11px;padding:3px 8px;background:rgba(74,142,255,0.08);border:1px solid var(--border);border-radius:4px;"><input type="checkbox"> Hive — 离线数仓</label>
+                <label style="cursor:pointer;font-size:11px;padding:3px 8px;background:rgba(74,142,255,0.08);border:1px solid var(--border);border-radius:4px;"><input type="checkbox"> MongoDB — 配置库</label>
+              </div>
+            </div>
+          </div>
+          <!-- 超时 & 重试 -->
+          <div class="weight-row">
+            <div style="font-weight:600;color:var(--text-bright);margin-bottom:8px;">⚙️ 超时 & 重试策略</div>
+            <div style="display:flex;gap:16px;">
+              <div style="flex:1;">
+                <div style="font-size:11px;color:var(--text);margin-bottom:2px;">超时时间（分钟）</div>
+                <input class="input" type="number" value="120" min="10" max="600" style="width:100%;padding:4px 8px;font-size:12px;" id="lineage-timeout">
+              </div>
+              <div style="flex:1;">
+                <div style="font-size:11px;color:var(--text);margin-bottom:2px;">失败重试次数</div>
+                <input class="input" type="number" value="3" min="0" max="10" style="width:100%;padding:4px 8px;font-size:12px;" id="lineage-retry">
+              </div>
+              <div style="flex:1;">
+                <div style="font-size:11px;color:var(--text);margin-bottom:2px;">重试间隔（分钟）</div>
+                <input class="input" type="number" value="10" min="1" max="120" style="width:100%;padding:4px 8px;font-size:12px;" id="lineage-retry-interval">
+              </div>
+            </div>
+          </div>
+          <div style="margin-top:8px;display:flex;gap:8px;">
+            <button class="btn btn-primary btn-sm" onclick="saveLineageScanConfig()">💾 保存配置</button>
+            <button class="btn btn-outline btn-sm" onclick="triggerLineageScan()">▶ 立即执行一次</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 右侧：冷数据发现调度 -->
+      <div class="card" style="flex:1;">
+        <div class="card-title" style="display:flex;justify-content:space-between;align-items:center;">
+          <span>❄️ 冷数据发现调度</span>
+          <span class="tag tag-core" id="cold-scan-status">运行中</span>
+        </div>
+        <div style="font-size:12px;">
+          <!-- 调度周期 -->
+          <div class="weight-row">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+              <span>⏱ 调度周期</span>
+              <select class="input" style="padding:4px 8px;font-size:12px;" id="cold-cron-preset" onchange="updateColdCron()">
+                <option value="0 2 * * 0" selected>每周日 02:00（默认）</option>
+                <option value="0 2 * * *">每天 02:00</option>
+                <option value="0 2 * * 1,4">每周一/四 02:00</option>
+                <option value="0 2 1 * *">每月 1 号 02:00</option>
+                <option value="custom">自定义 Cron</option>
+              </select>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">
+              <span style="color:var(--text);font-size:11px;min-width:50px;">Cron:</span>
+              <input class="input" style="flex:1;padding:4px 8px;font-size:12px;font-family:monospace;" value="0 2 * * 0" id="cold-cron-input" placeholder="0 2 * * 0">
+            </div>
+            <div style="font-size:10px;color:var(--text);">下次执行: <strong id="cold-next-run" style="color:var(--accent2);">2026-07-20 02:00</strong>（5 天后）</div>
+          </div>
+          <!-- 三无判定阈值 -->
+          <div class="weight-row">
+            <div style="font-weight:600;color:var(--text-bright);margin-bottom:8px;">📐 三无判定阈值</div>
+            <div style="display:flex;gap:12px;">
+              <div style="flex:1;">
+                <div style="font-size:11px;color:var(--text);margin-bottom:2px;">无访问天数 ≥</div>
+                <div style="display:flex;align-items:center;gap:6px;">
+                  <input class="input" type="number" value="90" min="30" max="365" style="width:70px;padding:4px 8px;font-size:12px;" id="cold-no-access-days">
+                  <span style="font-size:11px;color:var(--text);">天</span>
+                </div>
+              </div>
+              <div style="flex:1;">
+                <div style="font-size:11px;color:var(--text);margin-bottom:2px;">无更新天数 ≥</div>
+                <div style="display:flex;align-items:center;gap:6px;">
+                  <input class="input" type="number" value="90" min="30" max="365" style="width:70px;padding:4px 8px;font-size:12px;" id="cold-no-update-days">
+                  <span style="font-size:11px;color:var(--text);">天</span>
+                </div>
+              </div>
+            </div>
+            <div style="font-size:10px;color:var(--text);margin-top:4px;">无下游依赖判定由血缘图谱出度自动计算，无需配置</div>
+          </div>
+          <!-- 数据源范围 -->
+          <div class="weight-row">
+            <div style="font-weight:600;color:var(--text-bright);margin-bottom:8px;">📂 扫描范围</div>
+            <div style="margin-bottom:8px;">
+              <label style="cursor:pointer;margin-right:16px;"><input type="radio" name="cold-scope" value="all" checked onchange="updateColdScope()"> 全量扫描（所有表）</label>
+              <label style="cursor:pointer;"><input type="radio" name="cold-scope" value="custom" onchange="updateColdScope()"> 指定数据源 / 排除规则</label>
+            </div>
+            <div id="cold-scope-custom" style="display:none;">
+              <div style="margin-bottom:6px;font-size:11px;color:var(--text);">包含数据源:</div>
+              <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px;">
+                <label style="cursor:pointer;font-size:11px;padding:3px 8px;background:rgba(74,142,255,0.08);border:1px solid var(--border);border-radius:4px;"><input type="checkbox" checked> ods 层</label>
+                <label style="cursor:pointer;font-size:11px;padding:3px 8px;background:rgba(74,142,255,0.08);border:1px solid var(--border);border-radius:4px;"><input type="checkbox" checked> dwd 层</label>
+                <label style="cursor:pointer;font-size:11px;padding:3px 8px;background:rgba(74,142,255,0.08);border:1px solid var(--border);border-radius:4px;"><input type="checkbox" checked> dws 层</label>
+                <label style="cursor:pointer;font-size:11px;padding:3px 8px;background:rgba(74,142,255,0.08);border:1px solid var(--border);border-radius:4px;"><input type="checkbox"> ads 层</label>
+                <label style="cursor:pointer;font-size:11px;padding:3px 8px;background:rgba(74,142,255,0.08);border:1px solid var(--border);border-radius:4px;"><input type="checkbox"> tmp 层</label>
+              </div>
+              <div style="font-size:11px;color:var(--text);margin-bottom:4px;">排除前缀 / 正则:</div>
+              <input class="input" style="width:100%;padding:4px 8px;font-size:12px;" placeholder="例如: _backup_, _test_, tmp\\..*" id="cold-exclude-pattern">
+            </div>
+          </div>
+          <!-- 超时 & 重试 -->
+          <div class="weight-row">
+            <div style="font-weight:600;color:var(--text-bright);margin-bottom:8px;">⚙️ 超时 & 重试策略</div>
+            <div style="display:flex;gap:16px;">
+              <div style="flex:1;">
+                <div style="font-size:11px;color:var(--text);margin-bottom:2px;">超时时间（分钟）</div>
+                <input class="input" type="number" value="60" min="10" max="300" style="width:100%;padding:4px 8px;font-size:12px;" id="cold-timeout">
+              </div>
+              <div style="flex:1;">
+                <div style="font-size:11px;color:var(--text);margin-bottom:2px;">失败重试次数</div>
+                <input class="input" type="number" value="2" min="0" max="5" style="width:100%;padding:4px 8px;font-size:12px;" id="cold-retry">
+              </div>
+              <div style="flex:1;">
+                <div style="font-size:11px;color:var(--text);margin-bottom:2px;">重试间隔（分钟）</div>
+                <input class="input" type="number" value="15" min="1" max="120" style="width:100%;padding:4px 8px;font-size:12px;" id="cold-retry-interval">
+              </div>
+            </div>
+          </div>
+          <div style="margin-top:8px;display:flex;gap:8px;">
+            <button class="btn btn-primary btn-sm" onclick="saveColdScanConfig()">💾 保存配置</button>
+            <button class="btn btn-outline btn-sm" onclick="triggerColdScan()">▶ 立即执行一次</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 执行历史 -->
+    <div class="card">
+      <div class="card-title" style="display:flex;justify-content:space-between;align-items:center;">
+        <span>📜 最近执行历史</span>
+        <span style="font-size:11px;color:var(--text);font-weight:400;">共 <strong id="scan-history-count" style="color:var(--accent2);">16</strong> 条记录</span>
+      </div>
+      <div class="table-wrap" style="max-height:220px;overflow-y:auto;">
+        <table>
+          <thead><tr><th>任务类型</th><th>触发方式</th><th>开始时间</th><th>结束时间</th><th>耗时</th><th>扫描表数</th><th>发现/采集</th><th>状态</th><th>操作</th></tr></thead>
+          <tbody id="scan-history-body"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== 弹窗 ==================== -->
+<div class="modal-overlay" id="modal-overlay" onclick="if(event.target===this)closeModal()">
+  <div class="modal" id="modal-content"></div>
+</div>
+
+<!-- ==================== Toast ==================== -->
+<div class="toast" id="toast"></div>
+
+<script>
+// ===== 粒子背景 =====
+(function(){
+  const c=document.getElementById('particles'), ctx=c.getContext('2d');
+  c.width=1920; c.height=1080;
+  const dots=[]; for(let i=0;i<60;i++){ dots.push({x:Math.random()*1920,y:Math.random()*1080,r:Math.random()*1.2+0.3,a:Math.random()*0.4+0.1,dx:(Math.random()-0.5)*0.2,dy:(Math.random()-0.5)*0.2}); }
+  function anim(){
+    ctx.clearRect(0,0,1920,1080);
+    dots.forEach(d=>{
+      d.x+=d.dx; d.y+=d.dy;
+      if(d.x<0||d.x>1920)d.dx*=-1; if(d.y<0||d.y>1080)d.dy*=-1;
+      ctx.beginPath(); ctx.arc(d.x,d.y,d.r,0,Math.PI*2);
+      ctx.fillStyle=`rgba(100,160,255,${d.a})`; ctx.fill();
+    });
+    for(let i=0;i<dots.length;i++){ for(let j=i+1;j<dots.length;j++){ const dx=dots[i].x-dots[j].x,dy=dots[i].y-dots[j].y; if(Math.abs(dx)<120&&Math.abs(dy)<120){ ctx.beginPath(); ctx.moveTo(dots[i].x,dots[i].y); ctx.lineTo(dots[j].x,dots[j].y); ctx.strokeStyle=`rgba(64,128,255,${0.03})`; ctx.stroke(); } } }
+    requestAnimationFrame(anim);
+  }anim();
+})();
+
+// ===== 时钟 =====
+function tick(){ const now=new Date(); document.getElementById('live-clock').textContent=now.getFullYear()+'-'+String(now.getMonth()+1).padStart(2,'0')+'-'+String(now.getDate()).padStart(2,'0')+' '+String(now.getHours()).padStart(2,'0')+':'+String(now.getMinutes()).padStart(2,'0')+':'+String(now.getSeconds()).padStart(2,'0'); }
+setInterval(tick,1000);tick();
+
+// ===== Toast =====
+let toastTimer;
+function showToast(msg, type){
+  const t=document.getElementById('toast');
+  t.textContent=msg; t.className='toast '+type+' show';
+  clearTimeout(toastTimer);
+  toastTimer=setTimeout(()=>{ t.className='toast'; },2500);
+}
+
+// ===== Tab 切换 =====
+function switchTab(name){
+  document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
+  document.querySelector(`[data-tab="${name}"]`).classList.add('active');
+  document.querySelectorAll('.hidden-panel').forEach(p=>p.classList.remove('active'));
+  document.getElementById('panel-'+name).classList.add('active');
+  if(name==='dashboard'){ setTimeout(()=>{ renderPie(); renderSourceBar(); renderColdTrend(); },100); }
+  if(name==='lineage'){ setTimeout(renderLineage,200); }
+  if(name==='heat'){ setTimeout(()=>{ renderHeatTable(); renderRadar(); renderHeatTrend(); },100); }
+  if(name==='governance') renderGovernanceTable();
+  if(name==='catalog'){ setTimeout(()=>{ renderCatalogTable(); renderCatalogStats(); },100); }
+  if(name==='threshold'){ setTimeout(initThresholdPage,100); }
+  if(name==='discovery'){ setTimeout(()=>{ renderDiscoveryTable(); renderDiscoveryTrend(); },100); }
+  if(name==='scan-config'){ setTimeout(renderScanHistory,100); }
+  resizeAllCharts();
+}
+
+document.querySelectorAll('.nav-item').forEach(item=>{
+  item.addEventListener('click',()=>switchTab(item.dataset.tab));
+});
+
+// ===== 所有 ECharts 实例 =====
+const charts={};
+function getChart(id){ if(!charts[id]){ const dom=document.getElementById(id); if(!dom)return null; charts[id]=echarts.init(dom); } return charts[id]; }
+function resizeAllCharts(){ Object.values(charts).forEach(c=>{ try{c.resize();}catch(e){} }); }
+window.addEventListener('resize',resizeAllCharts);
+
+// ===== 首页 — 热温冷分布饼图 =====
+function renderPie(){
+  const chart=getChart('chart-pie');
+  chart.setOption({
+    tooltip:{trigger:'item',formatter:'{b}: {c} 张表 ({d}%)'},
+    series:[{
+      type:'pie',radius:['55%','78%'],center:['50%','50%'],
+      data:[
+        {value:680,name:'热数据',itemStyle:{color:'#ef5350'}},
+        {value:1240,name:'温数据',itemStyle:{color:'#ff9800'}},
+        {value:1320,name:'冷数据',itemStyle:{color:'#64b5f6'}}
+      ],
+      label:{color:'#b8c9e6',fontSize:11,formatter:'{b}\n{d}%'},
+      emphasis:{scaleSize:6}
+    }],
+    graphic:[
+      {type:'text',left:'center',top:'42%',style:{text:'3,240',textAlign:'center',fill:'#e8f0ff',fontSize:20,fontWeight:'bold',fontFamily:'DIN Alternate'}},
+      {type:'text',left:'center',top:'50%',style:{text:'总表数',textAlign:'center',fill:'#8899bb',fontSize:11}}
+    ]
+  });
+}
+
+// ===== 首页 — 各数据源热度对比 =====
+function renderSourceBar(){
+  const chart=getChart('chart-source-bar');
+  chart.setOption({
+    tooltip:{trigger:'axis',axisPointer:{type:'shadow'}},
+    legend:{data:['热','温','冷'],bottom:0,textStyle:{color:'#b8c9e6',fontSize:10}},
+    grid:{left:80,right:20,top:20,bottom:40},
+    xAxis:{type:'value',axisLabel:{color:'#8899bb',fontSize:10},splitLine:{lineStyle:{color:'rgba(100,160,255,0.08)'}}},
+    yAxis:{type:'category',data:['加工数据','云端回传','SDK上传','车机采集'].reverse(),axisLabel:{color:'#b8c9e6',fontSize:11}},
+    series:[
+      {name:'热',type:'bar',stack:'total',data:[100,80,120,380].reverse(),itemStyle:{color:'#ef5350'},barWidth:20},
+      {name:'温',type:'bar',stack:'total',data:[160,150,310,620].reverse(),itemStyle:{color:'#ff9800'}},
+      {name:'冷',type:'bar',stack:'total',data:[150,250,500,420].reverse(),itemStyle:{color:'#64b5f6'}}
+    ]
+  });
+}
+
+// ===== 首页 — 冷数据趋势 =====
+function renderColdTrend(){
+  const chart=getChart('chart-cold-trend');
+  chart.setOption({
+    tooltip:{trigger:'axis'},
+    grid:{left:50,right:30,top:20,bottom:30},
+    xAxis:{type:'category',data:['W1','W2','W3','W4','W5','W6'],axisLabel:{color:'#8899bb',fontSize:10},axisLine:{lineStyle:{color:'rgba(100,160,255,0.3)'}}},
+    yAxis:{type:'value',name:'冷表数',nameTextStyle:{color:'#8899bb',fontSize:10},axisLabel:{color:'#8899bb',fontSize:10},splitLine:{lineStyle:{color:'rgba(100,160,255,0.08)'}}},
+    series:[{
+      type:'line',data:[1268,1289,1298,1310,1315,1320],smooth:true,symbol:'circle',symbolSize:6,
+      lineStyle:{width:2,color:'#64b5f6'},itemStyle:{color:'#64b5f6'},
+      areaStyle:{color:{type:'linear',x:0,y:0,x2:0,y2:1,colorStops:[{offset:0,color:'rgba(100,181,246,0.2)'},{offset:1,color:'rgba(100,181,246,0.02)'}]}},
+      markLine:{silent:true,data:[{yAxis:1268,name:'基线',label:{formatter:'基线 1268',fontSize:10,color:'#8899bb'}}],lineStyle:{color:'rgba(255,255,255,0.2)',type:'dashed'}}
+    }]
+  });
+}
+
+// ===== 血缘图谱 =====
+let lineageChart=null;
+function renderLineage(){
+  const dom=document.getElementById('chart-lineage');
+  if(lineageChart){ lineageChart.dispose(); lineageChart=null; }
+  lineageChart=echarts.init(dom);
+
+  const direction=document.getElementById('lineage-direction').value;
+  const showColumn=document.getElementById('show-column').checked;
+
+  // 构建有向图数据
+  const nodes=[
+    {id:'sdk_leads',name:'sdk_leads',label:'线索表(SDK)',category:3,symbolSize:40,itemStyle:{color:'#4caf93'}},
+    {id:'vehicle_gps',name:'vehicle_gps',label:'车机GPS(车机)',category:3,symbolSize:40,itemStyle:{color:'#4caf93'}},
+    {id:'ods_raw',name:'ods_raw',label:'ODS原始',category:2,symbolSize:36,itemStyle:{color:'#64b5f6'}},
+    {id:'dwd_users',name:'dwd_users',label:'DWD用户',category:0,symbolSize:38,itemStyle:{color:'#ef5350'}},
+    {id:'dwd_orders',name:'dwd_orders',label:'DWD订单',category:0,symbolSize:44,itemStyle:{color:'#ef5350'},symbol:'roundRect'},
+    {id:'dws_daily',name:'dws_daily',label:'DWS日汇总',category:1,symbolSize:38,itemStyle:{color:'#ff9800'}},
+    {id:'dws_monthly',name:'dws_monthly',label:'DWS月汇总',category:1,symbolSize:34,itemStyle:{color:'#ff9800'}},
+    {id:'ads_dashboard',name:'ads_dashboard',label:'ADS看板',category:0,symbolSize:42,itemStyle:{color:'#ef5350'}},
+    {id:'ads_report',name:'ads_report',label:'ADS报表',category:1,symbolSize:36,itemStyle:{color:'#ff9800'}},
+    {id:'rpt_daily',name:'rpt_daily',label:'日报',category:0,symbolSize:32,itemStyle:{color:'#ef5350'},symbol:'diamond'},
+    {id:'rpt_monthly',name:'rpt_monthly',label:'月报',category:1,symbolSize:32,itemStyle:{color:'#ff9800'},symbol:'diamond'},
+  ];
+
+  if(showColumn){
+    nodes.push(
+      {id:'col_user_id',name:'user_id',label:'user_id',category:0,symbolSize:16,itemStyle:{color:'#ef5350'},symbol:'roundRect'},
+      {id:'col_order_amt',name:'order_amt',label:'order_amt',category:1,symbolSize:16,itemStyle:{color:'#ff9800'},symbol:'roundRect'},
+      {id:'col_cnt',name:'cnt',label:'cnt',category:2,symbolSize:16,itemStyle:{color:'#64b5f6'},symbol:'roundRect'},
+    );
+  }
+
+  const links=[
+    {source:'sdk_leads',target:'ods_raw',label:'ETL采集'},
+    {source:'vehicle_gps',target:'ods_raw',label:'ETL采集'},
+    {source:'ods_raw',target:'dwd_users',label:'清洗入库'},
+    {source:'ods_raw',target:'dwd_orders',label:'清洗入库'},
+    {source:'dwd_users',target:'dws_daily',label:'JOIN聚合'},
+    {source:'dwd_orders',target:'dws_daily',label:'JOIN聚合'},
+    {source:'dwd_orders',target:'dws_monthly',label:'月汇总'},
+    {source:'dws_daily',target:'ads_dashboard',label:'看板刷新'},
+    {source:'dws_monthly',target:'ads_report',label:'报表生成'},
+    {source:'ads_dashboard',target:'rpt_daily',label:'日报推送'},
+    {source:'ads_report',target:'rpt_monthly',label:'月报推送'},
+  ];
+
+  if(showColumn){
+    links.push(
+      {source:'dwd_users',target:'col_user_id',label:'字段'},
+      {source:'dwd_orders',target:'col_order_amt',label:'字段'},
+      {source:'dws_daily',target:'col_cnt',label:'字段'},
+    );
+  }
+
+  // 根据方向过滤
+  const rootId='dwd_orders';
+  let visibleNodes=new Set();
+  let visibleLinks=[];
+
+  function bfs(startId,dir,dep){
+    let q=[{id:startId,d:0}]; let visited=new Set([startId]); let result=new Set([startId]);
+    while(q.length>0){
+      let {id,d}=q.shift(); if(d>=dep)continue;
+      links.forEach(l=>{
+        let next=null;
+        if(dir==='downstream'||dir==='both'){ if(l.source===id)next=l.target; }
+        if(dir==='upstream'||dir==='both'){ if(l.target===id)next=l.source; }
+        if(next&&!visited.has(next)){ visited.add(next); result.add(next); q.push({id:next,d:d+1}); }
+      });
+    }
+    return result;
+  }
+
+  const depth=parseInt(document.getElementById('lineage-depth').value)||5;
+
+  if(direction==='both'){
+    visibleNodes=bfs(rootId,'both',depth);
+    visibleLinks=links.filter(l=>visibleNodes.has(l.source)||visibleNodes.has(l.target));
+  }else if(direction==='downstream'){
+    visibleNodes=bfs(rootId,'downstream',depth);
+    visibleLinks=links.filter(l=>visibleNodes.has(l.source)||visibleNodes.has(l.target));
+  }else{
+    visibleNodes=bfs(rootId,'upstream',depth);
+    visibleLinks=links.filter(l=>visibleNodes.has(l.source)||visibleNodes.has(l.target));
+  }
+
+  const filteredNodes=nodes.filter(n=>visibleNodes.has(n.id));
+
+  lineageChart.setOption({
+    tooltip:{trigger:'item',formatter:p=>p.dataType==='node'?`<strong>${p.data.label||p.data.name}</strong><br/>类型: ${p.data.category===0?'热':p.data.category===1?'温':p.data.category===2?'冷':'数据源'}<br/>点击查看详情`:p.data.label||''},
+    legend:{data:['热数据','温数据','冷数据','数据源'],bottom:0,textStyle:{color:'#b8c9e6',fontSize:10}},
+    series:[{
+      type:'graph',layout:'force',roam:true,draggable:true,
+      force:{repulsion:350,gravity:0.08,edgeLength:[120,280],layoutAnimation:true},
+      data:filteredNodes,
+      links:visibleLinks,
+      categories:[
+        {name:'热数据',itemStyle:{color:'#ef5350'}},
+        {name:'温数据',itemStyle:{color:'#ff9800'}},
+        {name:'冷数据',itemStyle:{color:'#64b5f6'}},
+        {name:'数据源',itemStyle:{color:'#4caf93'}},
+      ],
+      label:{show:true,fontSize:10,color:'#e8f0ff',formatter:p=>p.data.label||p.data.name},
+      edgeSymbol:['none','arrow'],
+      edgeSymbolSize:8,
+      lineStyle:{color:'rgba(74,142,255,0.4)',curveness:0.15},
+      emphasis:{focus:'adjacency',lineStyle:{width:3}}
+    }]
+  });
+
+  lineageChart.on('click',function(params){
+    if(params.dataType==='node'){
+      showLineageDetail(params.data);
+    }
+  });
+
+  lineageChart.on('contextmenu',function(params){
+    if(params.dataType==='node'){
+      showContextMenu(params);
+    }
+  });
+}
+
+function showLineageDetail(nodeData){
+  const panel=document.getElementById('lineage-detail');
+  const isHot=nodeData.category===0;
+  const isWarm=nodeData.category===1;
+  const isCold=nodeData.category===2;
+  const heatColor=isHot?'#ef5350':isWarm?'#ff9800':isCold?'#64b5f6':'#4caf93';
+  const heatLabel=isHot?'热数据':isWarm?'温数据':isCold?'冷数据':'数据源';
+
+  panel.innerHTML=`
+    <div style="margin-bottom:12px;">
+      <div style="font-size:16px;font-weight:600;color:var(--text-bright);">${nodeData.label||nodeData.name}</div>
+      <div style="font-size:11px;color:var(--text);margin-top:2px;">ID: ${nodeData.id}</div>
+    </div>
+    <div style="line-height:2.2;font-size:12px;">
+      <div>数据库: <span style="color:var(--text-bright);">datapool</span></div>
+      <div>表大小: <span style="color:var(--text-bright);">${(Math.random()*5+0.5).toFixed(1)} GB</span></div>
+      <div>行数: <span style="color:var(--text-bright);">${Math.floor(Math.random()*900+100)} 万</span></div>
+      <div>来源: <span class="tag tag-source">${nodeData.category===3?'SDK上传':isCold?'车机采集':'加工数据'}</span></div>
+      <div>标签: <span class="tag tag-core">核心业务</span></div>
+      <div>热度: <span style="color:${heatColor};font-weight:600;">${heatLabel}</span> ${isHot?'82':isWarm?'55':isCold?'18':'—'} 分</div>
+      <div>上游: <span style="color:var(--accent2);">${nodeData.category===3?'0':Math.floor(Math.random()*3+1)} 张表</span></div>
+      <div>下游: <span style="color:var(--accent2);">${Math.floor(Math.random()*6+1)} 张表</span></div>
+      <div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border);">
+        <div>Owner: <span style="color:var(--text-bright);">@zhangsan</span></div>
+        <div>最后更新: <span style="color:var(--text);">2026-07-14 08:30</span></div>
+        <div>更新频率: <span style="color:var(--text);">每日</span></div>
+      </div>
+    </div>
+    <div style="margin-top:12px;display:flex;gap:6px;flex-wrap:wrap;">
+      <button class="btn btn-outline btn-sm" onclick="switchTab('impact');document.getElementById('impact-table').value='${nodeData.name||nodeData.id}';runImpact();">⚡ 影响分析</button>
+      <button class="btn btn-outline btn-sm" onclick="switchTab('trace');document.getElementById('trace-table').value='${nodeData.name||nodeData.id}';runTrace();">🔍 溯源追踪</button>
+      ${nodeData.category<3?`<button class="btn btn-outline btn-sm" onclick="document.getElementById('show-column').checked=true;renderLineage();">📋 字段下钻</button>`:''}
+    </div>
+  `;
+}
+
+function showContextMenu(params){
+  const nodeData=params.data;
+  const menu=document.createElement('div');
+  menu.style.cssText='position:fixed;z-index:300;background:rgba(16,22,65,0.98);border:1px solid var(--border);border-radius:6px;padding:8px 0;min-width:160px;font-size:12px;';
+  menu.style.left=params.event.event.clientX+'px';
+  menu.style.top=params.event.event.clientY+'px';
+  menu.innerHTML=`
+    <div style="padding:6px 16px;color:var(--text-bright);border-bottom:1px solid var(--border);margin-bottom:4px;">${nodeData.label||nodeData.name}</div>
+    <div class="ctx-item" style="padding:8px 16px;cursor:pointer;" onclick="switchTab('impact');document.getElementById('impact-table').value='${nodeData.name||nodeData.id}';runImpact();removeMenu();">⚡ 前向影响分析</div>
+    <div class="ctx-item" style="padding:8px 16px;cursor:pointer;" onclick="switchTab('trace');document.getElementById('trace-table').value='${nodeData.name||nodeData.id}';runTrace();removeMenu();">🔍 后向溯源追踪</div>
+    ${nodeData.category<3?`<div class="ctx-item" style="padding:8px 16px;cursor:pointer;" onclick="document.getElementById('show-column').checked=true;renderLineage();removeMenu();">📋 下钻到字段级</div>`:''}
+    <div style="padding:8px 16px;cursor:pointer;color:var(--red);" onclick="removeMenu();">关闭</div>
+  `;
+  document.body.appendChild(menu);
+  function removeMenu(){ menu.remove(); document.removeEventListener('click',removeMenu); }
+  setTimeout(()=>document.addEventListener('click',removeMenu),100);
+
+  // hover 效果
+  menu.querySelectorAll('.ctx-item').forEach(item=>{
+    item.addEventListener('mouseenter',()=>item.style.background='rgba(74,142,255,0.1)');
+    item.addEventListener('mouseleave',()=>item.style.background='transparent');
+  });
+}
+
+// 血缘搜索
+function lineageSearch(val){
+  const dropdown=document.getElementById('lineage-dropdown');
+  if(!val||val.length<1){ dropdown.classList.remove('show'); return; }
+  const suggestions=[
+    {name:'dwd.orders',desc:'订单明细表',heat:'hot'},
+    {name:'dwd.users',desc:'用户明细表',heat:'warm'},
+    {name:'dws.user_order_daily',desc:'用户订单日汇总',heat:'hot'},
+    {name:'ods.raw_orders',desc:'原始订单数据',heat:'cold'},
+  ].filter(s=>s.name.toLowerCase().includes(val.toLowerCase()));
+  if(suggestions.length>0){
+    dropdown.innerHTML=suggestions.map(s=>`
+      <div class="item" onclick="document.getElementById('lineage-search').value='${s.name}';lineageSearch('${s.name}');renderLineage();">
+        <span class="highlight">${s.name}</span>
+        <span class="tag tag-${s.heat}" style="margin-left:8px;">${s.heat==='hot'?'热':s.heat==='warm'?'温':'冷'}</span>
+        <span style="font-size:10px;color:var(--text);margin-left:8px;">${s.desc}</span>
+      </div>
+    `).join('');
+    dropdown.classList.add('show');
+  }else{
+    dropdown.classList.remove('show');
+  }
+}
+document.addEventListener('click',function(e){
+  if(!e.target.closest('#lineage-search')&&!e.target.closest('#lineage-dropdown')){
+    document.getElementById('lineage-dropdown').classList.remove('show');
+  }
+});
+
+// ===== 影响分析 =====
+function runImpact(){
+  const schema=document.getElementById('impact-schema').value;
+  const table=document.getElementById('impact-table').value;
+  const column=document.getElementById('impact-column').value;
+  const includeReports=document.getElementById('impact-include-reports').checked;
+
+  // 模拟动画效果
+  const tablesEl=document.getElementById('impact-tables');
+  const colsEl=document.getElementById('impact-cols');
+  const tasksEl=document.getElementById('impact-tasks');
+  const reportsEl=document.getElementById('impact-reports');
+
+  animateValueEl(tablesEl,0,8,600);
+  animateValueEl(colsEl,0,23,600);
+  animateValueEl(tasksEl,0,12,600);
+  animateValueEl(reportsEl,0,includeReports?7:0,600);
+
+  showToast(`✅ 影响分析完成: ${schema}.${table}${column?'.'+column:''} → 影响 ${includeReports?'8表+7报表':'8表'}`, 'success');
+
+  // 更新标题
+  const rootEl=document.querySelector('#impact-tree .root');
+  if(rootEl) rootEl.textContent=`● ${schema}.${table}${column?'.'+column:''} ← 您要修改的${column?'字段':'表'}`;
+}
+
+function animateValueEl(el,start,end,duration){
+  const st=performance.now();
+  function up(ts){
+    const p=Math.min((ts-st)/duration,1);
+    const e=1-Math.pow(1-p,3);
+    el.textContent=Math.floor(start+(end-start)*e);
+    if(p<1)requestAnimationFrame(up);
+  }
+  requestAnimationFrame(up);
+}
+
+// ===== 溯源追踪 =====
+function runTrace(){
+  const schema=document.getElementById('trace-schema').value;
+  const table=document.getElementById('trace-table').value;
+  const column=document.getElementById('trace-column').value;
+  showToast(`✅ 溯源追踪完成: 从 ${schema}.${table}${column?'.'+column:''} → 追溯到原始数据源 (4层链路)`, 'success');
+}
+
+function navigateToLineage(name){
+  switchTab('lineage');
+  document.getElementById('lineage-search').value=name;
+  setTimeout(renderLineage,300);
+}
+
+// ===== 冷热度表格 =====
+const heatData=[
+  {name:'dws.user_order_daily',score:96,level:'hot',freq:450,lastAccess:'5分钟前',downstream:12,size:'2.3 GB',source:'加工数据',sourceType:'processed'},
+  {name:'ads.dashboard_main',score:92,level:'hot',freq:320,lastAccess:'1小时前',downstream:8,size:'1.1 GB',source:'加工数据',sourceType:'processed'},
+  {name:'dwd.orders',score:82,level:'hot',freq:180,lastAccess:'3小时前',downstream:5,size:'2.3 GB',source:'SDK上传',sourceType:'sdk_upload'},
+  {name:'ods.vehicle_status',score:78,level:'hot',freq:150,lastAccess:'30分钟前',downstream:6,size:'12.5 GB',source:'车机采集',sourceType:'vehicle_collect'},
+  {name:'dwd.charging',score:65,level:'warm',freq:80,lastAccess:'2小时前',downstream:3,size:'4.8 GB',source:'云端回传',sourceType:'cloud_sync'},
+  {name:'dws.city_rank',score:58,level:'warm',freq:45,lastAccess:'1天前',downstream:2,size:'0.8 GB',source:'加工数据',sourceType:'processed'},
+  {name:'ads.weekly_report',score:42,level:'warm',freq:20,lastAccess:'3天前',downstream:1,size:'0.5 GB',source:'加工数据',sourceType:'processed'},
+  {name:'ods.sdk_raw_backup',score:25,level:'cold',freq:2,lastAccess:'15天前',downstream:1,size:'35 GB',source:'SDK上传',sourceType:'sdk_upload'},
+  {name:'ods.vehicle_gps_archive',score:18,level:'cold',freq:0,lastAccess:'120天前',downstream:0,size:'520 GB',source:'车机采集',sourceType:'vehicle_collect'},
+  {name:'ods.cloud_sync_log_23',score:15,level:'cold',freq:0,lastAccess:'180天前',downstream:0,size:'280 GB',source:'云端回传',sourceType:'cloud_sync'},
+  {name:'ods.backup_2024Q1',score:15,level:'cold',freq:0,lastAccess:'180天前',downstream:0,size:'120 GB',source:'SDK上传',sourceType:'sdk_upload'},
+  {name:'tmp.experiment_042',score:8,level:'cold',freq:0,lastAccess:'320天前',downstream:0,size:'15 GB',source:'加工数据',sourceType:'processed'},
+  {name:'sdk.exp_group_C',score:3,level:'cold',freq:0,lastAccess:'365天前',downstream:0,size:'8 GB',source:'SDK上传',sourceType:'sdk_upload'},
+];
+
+function renderHeatTable(){
+  const sourceFilter=document.getElementById('heat-source-filter').value;
+  const levelFilter=document.getElementById('heat-level-filter').value;
+  const sortBy=document.getElementById('heat-sort').value;
+  const search=document.getElementById('heat-search').value.toLowerCase();
+
+  let filtered=[...heatData];
+  if(sourceFilter!=='all') filtered=filtered.filter(d=>d.sourceType===sourceFilter);
+  if(levelFilter!=='all') filtered=filtered.filter(d=>d.level===levelFilter);
+  if(search) filtered=filtered.filter(d=>d.name.toLowerCase().includes(search));
+
+  if(sortBy==='score') filtered.sort((a,b)=>b.score-a.score);
+  else if(sortBy==='size') filtered.sort((a,b)=>parseFloat(b.size)-parseFloat(a.size));
+  else if(sortBy==='access') filtered.sort((a,b)=>a.lastAccess.localeCompare(b.lastAccess));
+
+  const tbody=document.getElementById('heat-table-body');
+  tbody.innerHTML=filtered.map((d,i)=>{
+    const levelTag=d.level==='hot'?'<span class="tag tag-hot">🔥 热</span>':d.level==='warm'?'<span class="tag tag-warm">🌤 温</span>':'<span class="tag tag-cold">❄️ 冷</span>';
+    const scoreColor=d.level==='hot'?'color:#ef5350;':d.level==='warm'?'color:#ff9800;':'color:#64b5f6;';
+    return `<tr onclick="selectHeatRow(this,'${d.name}',${d.score})" style="cursor:pointer;">
+      <td>${i+1}</td><td style="color:var(--text-bright);">${d.name}</td>
+      <td style="${scoreColor}font-weight:700;">${d.score}</td>
+      <td>${levelTag}</td><td>${d.freq}</td><td>${d.lastAccess}</td>
+      <td>${d.downstream}</td><td>${d.size}</td>
+      <td><span class="tag tag-source">${d.source}</span></td>
+      <td><button class="btn btn-outline btn-sm" onclick="event.stopPropagation();switchTab('lineage');">查看血缘</button></td>
+    </tr>`;
+  }).join('');
+}
+
+function selectHeatRow(tr,name,score){
+  document.querySelectorAll('#heat-table-body tr').forEach(r=>r.classList.remove('selected'));
+  tr.classList.add('selected');
+  document.getElementById('heat-detail-name').textContent=name;
+  setTimeout(()=>renderRadar(score),50);
+  setTimeout(()=>renderHeatTrend(score),50);
+}
+
+// ===== 雷达图 =====
+function renderRadar(score=96){
+  const chart=getChart('chart-radar');
+  const vals=[
+    score>80?100:score>50?70:30,
+    score>80?100:score>50?60:15,
+    score>80?100:score>50?50:0,
+    score>80?100:score>50?70:10,
+    score>80?100:score>50?60:20,
+    score>80?70:score>50?50:20,
+  ];
+  chart.setOption({
+    radar:{
+      center:['50%','50%'],radius:'65%',
+      indicator:[
+        {name:'访问频率\n(30%)',max:100},{name:'最近访问\n(25%)',max:100},
+        {name:'下游依赖\n(20%)',max:100},{name:'新鲜度\n(10%)',max:100},
+        {name:'业务标签\n(10%)',max:100},{name:'存储成本\n(5%)',max:100}
+      ],
+      axisName:{color:'#b8c9e6',fontSize:9}
+    },
+    series:[{
+      type:'radar',data:[{value:vals,name:'热度构成',areaStyle:{color:'rgba(239,83,80,0.2)'},lineStyle:{color:'#ef5350'},itemStyle:{color:'#ef5350'}}],
+      symbol:'circle',symbolSize:4
+    }]
+  });
+}
+
+function renderHeatTrend(score=96){
+  const chart=getChart('chart-heat-trend');
+  const base=score; const data=[base-2,base+1,base-3,base,base+2].map(v=>Math.max(0,Math.min(100,v)));
+  chart.setOption({
+    grid:{left:35,right:10,top:10,bottom:20},
+    xAxis:{type:'category',data:['6/10','6/17','6/24','7/1','7/8'],axisLabel:{color:'#8899bb',fontSize:9},axisLine:{lineStyle:{color:'rgba(100,160,255,0.2)'}}},
+    yAxis:{type:'value',min:Math.max(0,Math.min(...data)-10),max:100,axisLabel:{color:'#8899bb',fontSize:9},splitLine:{lineStyle:{color:'rgba(100,160,255,0.06)'}}},
+    series:[{type:'line',data:data,smooth:true,symbol:'circle',symbolSize:5,lineStyle:{width:2,color:'#ef5350'},itemStyle:{color:'#ef5350'},areaStyle:{color:{type:'linear',x:0,y:0,x2:0,y2:1,colorStops:[{offset:0,color:'rgba(239,83,80,0.2)'},{offset:1,color:'rgba(239,83,80,0.02)'}]}}}]
+  });
+}
+
+// ===== 冷数据治理表格 =====
+const governanceData=[
+  {name:'vehicle_raw_gps_2024',size:'820 GB',noAccess:240,down:0,source:'车机采集:driving',owner:'@zhangsan',lastUpdate:'2025-11-20',suggest:'归档',checked:false},
+  {name:'sdk_lead_backup_23',size:'450 GB',noAccess:210,down:0,source:'SDK上传:business_ops',owner:'@lisi',lastUpdate:'2025-12-05',suggest:'归档',checked:false},
+  {name:'cloud_map_cache_old',size:'320 GB',noAccess:180,down:0,source:'云端回传:map_update',owner:'@wangwu',lastUpdate:'2026-01-10',suggest:'下线',checked:false},
+  {name:'tmp_experiment_042',size:'15 GB',noAccess:365,down:0,source:'加工数据',owner:'未知',lastUpdate:'2025-07-15',suggest:'删除',checked:false},
+  {name:'dwd.inactive_users',size:'89 GB',noAccess:150,down:0,source:'加工数据:dwd_layer',owner:'@zhaoliu',lastUpdate:'2026-02-20',suggest:'归档',checked:false},
+  {name:'ods.backup_daily_2023',size:'210 GB',noAccess:200,down:0,source:'SDK上传',owner:'@zhangsan',lastUpdate:'2023-12-31',suggest:'归档',checked:false},
+  {name:'cloud_ota_logs_2024Q1',size:'95 GB',noAccess:160,down:0,source:'云端回传:ota_log',owner:'@sunqi',lastUpdate:'2024-03-31',suggest:'下线',checked:false},
+  {name:'raw_sdk_device_test',size:'5 GB',noAccess:400,down:0,source:'SDK上传:device_data',owner:'未知',lastUpdate:'2025-05-10',suggest:'删除',checked:false},
+];
+
+function renderGovernanceTable(){
+  const tbody=document.getElementById('governance-table-body');
+  tbody.innerHTML=governanceData.map((d,i)=>`
+    <tr>
+      <td><input type="checkbox" class="cold-checkbox" data-idx="${i}" onchange="updateSelected()" ${d.checked?'checked':''}></td>
+      <td style="color:var(--text-bright);">${d.name}</td>
+      <td style="color:var(--orange);">${d.size}</td>
+      <td style="color:${d.noAccess>300?'var(--red)':'var(--orange)'};">${d.noAccess}天</td>
+      <td>${d.down}</td>
+      <td><span class="tag tag-source">${d.source}</span></td>
+      <td>${d.owner}</td>
+      <td>${d.lastUpdate}</td>
+      <td><span class="tag tag-${d.suggest==='删除'?'hot':'warm'}">${d.suggest}</span></td>
+      <td>
+        <button class="btn btn-outline btn-sm" onclick="switchTab('lineage');">查看</button>
+        <button class="btn btn-danger btn-sm" onclick="applySingleOffline('${d.name}')">申请下线</button>
+      </td>
+    </tr>
+  `).join('');
+}
+
+function toggleSelectAll(cb){
+  governanceData.forEach(d=>d.checked=cb.checked);
+  renderGovernanceTable();
+  updateSelected();
+}
+
+function updateSelected(){
+  const checked=governanceData.filter(d=>d.checked);
+  document.getElementById('selected-count').textContent=checked.length;
+  const totalSize=checked.reduce((s,d)=>s+parseFloat(d.size),0);
+  document.getElementById('selected-size').textContent=totalSize.toFixed(1);
+}
+
+function batchApplyOffline(){
+  const checked=governanceData.filter(d=>d.checked);
+  if(checked.length===0){ showToast('请先选择要下线的表','warning'); return; }
+  const totalSize=checked.reduce((s,d)=>s+parseFloat(d.size),0);
+  showToast(`✅ 已提交 ${checked.length} 张表的下线申请，预计回收 ${totalSize.toFixed(1)} GB`, 'success');
+  checked.forEach(d=>d.checked=false);
+  renderGovernanceTable();
+  updateSelected();
+}
+
+function applySingleOffline(name){
+  showToast(`✅ 已提交 [${name}] 的下线申请`, 'success');
+}
+
+// ===== 弹窗 =====
+function showDetailModal(name){
+  const overlay=document.getElementById('modal-overlay');
+  const content=document.getElementById('modal-content');
+  content.innerHTML=`
+    <div class="modal-header">
+      <h3>📋 ${name}</h3>
+      <div class="modal-close" onclick="closeModal()">✕</div>
+    </div>
+    <div style="font-size:12px;line-height:2;">
+      <div><strong>所属表:</strong> ${name.split('.')[0]}.${name.split('.')[1]}</div>
+      <div><strong>数据类型:</strong> BIGINT</div>
+      <div><strong>来源:</strong> <span class="tag tag-source">SDK上传</span></div>
+      <div><strong>标签:</strong> <span class="tag tag-core">核心业务</span></div>
+      <div><strong>热度:</strong> <span style="color:#ef5350;">🔥 热数据 82分</span></div>
+      <div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border);">
+        <strong>上游字段:</strong> sdk_order_raw.raw_uid (清洗: IFNULL)<br>
+        <strong>下游字段:</strong> dws.user_order_daily.user_id, ads.dashboard_summary.active_users<br>
+        <strong>变更影响:</strong> 影响 2 个下游字段
+      </div>
+    </div>
+    <div style="margin-top:16px;display:flex;gap:8px;">
+      <button class="btn btn-primary btn-sm" onclick="closeModal();switchTab('lineage');">🔗 查看血缘图谱</button>
+      <button class="btn btn-outline btn-sm" onclick="closeModal();switchTab('impact');runImpact();">⚡ 影响分析</button>
+      <button class="btn btn-outline btn-sm" onclick="closeModal();">关闭</button>
+    </div>
+  `;
+  overlay.classList.add('show');
+}
+
+function closeModal(){
+  document.getElementById('modal-overlay').classList.remove('show');
+}
+
+// ===== 初始化 =====
+setTimeout(()=>{
+  renderPie();
+  renderSourceBar();
+  renderColdTrend();
+},200);
+
+// ==================== 数据资产目录 ====================
+const catalogData = [
+  {name:'ads.dashboard_main',layer:'ADS',fields:34,owner:'@zhangsan',source:'加工数据',sourceType:'processed',score:92,heat:'hot',downstream:8,updateFreq:'每日',lastUpdate:'2026-07-15'},
+  {name:'dws.user_order_daily',layer:'DWS',fields:28,owner:'@lisi',source:'加工数据',sourceType:'processed',score:96,heat:'hot',downstream:12,updateFreq:'每小时',lastUpdate:'2026-07-15'},
+  {name:'dwd.orders',layer:'DWD',fields:45,owner:'@zhangsan',source:'SDK上传',sourceType:'sdk_upload',score:82,heat:'hot',downstream:5,updateFreq:'每日',lastUpdate:'2026-07-15'},
+  {name:'ods.vehicle_status',layer:'ODS',fields:62,owner:'@wangwu',source:'车机采集',sourceType:'vehicle_collect',score:78,heat:'hot',downstream:6,updateFreq:'实时',lastUpdate:'2026-07-15'},
+  {name:'dwd.charging',layer:'DWD',fields:38,owner:'@zhaoliu',source:'云端回传',sourceType:'cloud_sync',score:65,heat:'warm',downstream:3,updateFreq:'每小时',lastUpdate:'2026-07-15'},
+  {name:'dws.city_rank',layer:'DWS',fields:18,owner:'@sunqi',source:'加工数据',sourceType:'processed',score:58,heat:'warm',downstream:2,updateFreq:'每日',lastUpdate:'2026-07-14'},
+  {name:'ods.vehicle_gps_raw',layer:'ODS',fields:85,owner:'@wangwu',source:'车机采集',sourceType:'vehicle_collect',score:72,heat:'hot',downstream:7,updateFreq:'实时',lastUpdate:'2026-07-15'},
+  {name:'dim.user_info',layer:'DIM',fields:22,owner:'@lisi',source:'加工数据',sourceType:'processed',score:80,heat:'hot',downstream:9,updateFreq:'每日',lastUpdate:'2026-07-15'},
+  {name:'ads.weekly_report',layer:'ADS',fields:15,owner:'@zhangsan',source:'加工数据',sourceType:'processed',score:42,heat:'warm',downstream:1,updateFreq:'每周',lastUpdate:'2026-07-14'},
+  {name:'ods.sdk_raw_order',layer:'ODS',fields:56,owner:'@zhangsan',source:'SDK上传',sourceType:'sdk_upload',score:68,heat:'warm',downstream:4,updateFreq:'实时',lastUpdate:'2026-07-15'},
+  {name:'ods.cloud_sync_map',layer:'ODS',fields:48,owner:'@zhaoliu',source:'云端回传',sourceType:'cloud_sync',score:55,heat:'warm',downstream:3,updateFreq:'每小时',lastUpdate:'2026-07-15'},
+  {name:'dwd.driving_behavior',layer:'DWD',fields:41,owner:'@wangwu',source:'车机采集',sourceType:'vehicle_collect',score:70,heat:'hot',downstream:6,updateFreq:'每日',lastUpdate:'2026-07-15'},
+  {name:'ods.sdk_raw_backup',layer:'ODS',fields:56,owner:'未标注',source:'SDK上传',sourceType:'sdk_upload',score:25,heat:'cold',downstream:1,updateFreq:'不规律',lastUpdate:'2026-05-20'},
+  {name:'ods.vehicle_gps_archive',layer:'ODS',fields:85,owner:'未标注',source:'车机采集',sourceType:'vehicle_collect',score:18,heat:'cold',downstream:0,updateFreq:'> 90天',lastUpdate:'2026-01-10'},
+  {name:'ods.cloud_sync_log_23',layer:'ODS',fields:32,owner:'未标注',source:'云端回传',sourceType:'cloud_sync',score:15,heat:'cold',downstream:0,updateFreq:'> 90天',lastUpdate:'2025-12-05'},
+  {name:'tmp.experiment_042',layer:'ADS',fields:8,owner:'未知',source:'加工数据',sourceType:'processed',score:8,heat:'cold',downstream:0,updateFreq:'> 90天',lastUpdate:'2025-07-15'},
+  {name:'sdk.exp_group_C',layer:'ADS',fields:5,owner:'未知',source:'SDK上传',sourceType:'sdk_upload',score:3,heat:'cold',downstream:0,updateFreq:'> 90天',lastUpdate:'2025-06-01'},
+  {name:'dws.marketing_campaign',layer:'DWS',fields:20,owner:'@sunqi',source:'加工数据',sourceType:'processed',score:75,heat:'hot',downstream:4,updateFreq:'每日',lastUpdate:'2026-07-15'},
+  {name:'ods.backup_2024Q1',layer:'ODS',fields:100,owner:'未标注',source:'SDK上传',sourceType:'sdk_upload',score:15,heat:'cold',downstream:0,updateFreq:'> 90天',lastUpdate:'2024-03-31'},
+  {name:'dim.vehicle_model',layer:'DIM',fields:12,owner:'@wangwu',source:'加工数据',sourceType:'processed',score:60,heat:'warm',downstream:5,updateFreq:'每周',lastUpdate:'2026-07-12'},
+];
+
+const catalogFieldDetails = {
+  'ads.dashboard_main': [
+    {name:'active_users',type:'BIGINT',heat:'hot',downstream:3,desc:'活跃用户数'},
+    {name:'new_users',type:'BIGINT',heat:'hot',downstream:2,desc:'新增用户数'},
+    {name:'total_orders',type:'BIGINT',heat:'warm',downstream:1,desc:'总订单数'},
+  ],
+  'dws.user_order_daily': [
+    {name:'user_id',type:'BIGINT',heat:'hot',downstream:5,desc:'用户ID'},
+    {name:'order_cnt',type:'INT',heat:'hot',downstream:4,desc:'订单数'},
+    {name:'total_amount',type:'DECIMAL(18,2)',heat:'warm',downstream:3,desc:'总金额'},
+  ],
+  'dwd.orders': [
+    {name:'order_id',type:'VARCHAR(64)',heat:'hot',downstream:4,desc:'订单ID'},
+    {name:'user_id',type:'BIGINT',heat:'hot',downstream:6,desc:'用户ID'},
+    {name:'order_status',type:'VARCHAR(20)',heat:'warm',downstream:2,desc:'订单状态'},
+  ],
+  'ods.vehicle_status': [
+    {name:'vin',type:'VARCHAR(17)',heat:'hot',downstream:5,desc:'车架号'},
+    {name:'gps_lng',type:'DECIMAL(10,7)',heat:'warm',downstream:3,desc:'GPS经度'},
+    {name:'gps_lat',type:'DECIMAL(10,7)',heat:'warm',downstream:3,desc:'GPS纬度'},
+  ],
+};
+
+let catalogSortDir = -1;
+
+function renderCatalogTable(){
+  const sourceFilter = document.getElementById('catalog-source-filter').value;
+  const heatFilter = document.getElementById('catalog-heat-filter').value;
+  const layerFilter = document.getElementById('catalog-layer-filter').value;
+  const search = document.getElementById('catalog-search').value.toLowerCase();
+
+  let filtered = [...catalogData];
+  if(sourceFilter!=='all') filtered = filtered.filter(d=>d.sourceType===sourceFilter);
+  if(heatFilter!=='all') filtered = filtered.filter(d=>d.heat===heatFilter);
+  if(layerFilter!=='all') filtered = filtered.filter(d=>d.layer===layerFilter);
+  if(search) filtered = filtered.filter(d=>d.name.toLowerCase().includes(search)||d.owner.toLowerCase().includes(search));
+
+  const tbody = document.getElementById('catalog-table-body');
+  document.getElementById('catalog-total').textContent = filtered.length;
+
+  tbody.innerHTML = filtered.map(d=>{
+    const heatTag = d.heat==='hot'?'<span class="tag tag-hot">🔥 热</span>':d.heat==='warm'?'<span class="tag tag-warm">🌤 温</span>':'<span class="tag tag-cold">❄️ 冷</span>';
+    const scoreColor = d.heat==='hot'?'color:#ef5350;':d.heat==='warm'?'color:#ff9800;':'color:#64b5f6;';
+    const missingOwner = d.owner==='未标注'||d.owner==='未知';
+    return `<tr onclick="showCatalogDetail('${d.name}')" style="cursor:pointer;">
+      <td style="color:var(--text-bright);">${d.name}</td>
+      <td><span class="tag tag-source">${d.layer}</span></td>
+      <td>${d.fields}</td>
+      <td style="${missingOwner?'color:var(--orange);':''}">${d.owner}${missingOwner?' ⚠':''}</td>
+      <td><span class="tag tag-source">${d.source}</span></td>
+      <td style="${scoreColor}font-weight:700;">${d.score}</td>
+      <td>${d.downstream}</td>
+      <td>${d.updateFreq}</td>
+      <td style="font-size:11px;">${d.lastUpdate}</td>
+      <td>
+        <button class="btn btn-outline btn-sm" onclick="event.stopPropagation();switchTab('lineage');">血缘</button>
+        <button class="btn btn-outline btn-sm" onclick="event.stopPropagation();switchTab('impact');">影响分析</button>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+function showCatalogDetail(name){
+  const data = catalogData.find(d=>d.name===name);
+  if(!data) return;
+  const fields = catalogFieldDetails[name] || [];
+  const detailEl = document.getElementById('catalog-detail');
+  const heatTag = data.heat==='hot'?'<span class="tag tag-hot">🔥 热</span>':data.heat==='warm'?'<span class="tag tag-warm">🌤 温</span>':'<span class="tag tag-cold">❄️ 冷</span>';
+  detailEl.innerHTML = `
+    <div style="line-height:2;">
+      <div style="font-size:15px;color:var(--text-bright);font-weight:600;margin-bottom:8px;">${data.name}</div>
+      <div><strong>层级:</strong> <span class="tag tag-source">${data.layer}</span></div>
+      <div><strong>来源:</strong> <span class="tag tag-source">${data.source}</span></div>
+      <div><strong>Owner:</strong> ${data.owner}</div>
+      <div><strong>热度评分:</strong> <span style="${data.heat==='hot'?'color:#ef5350':data.heat==='warm'?'color:#ff9800':'color:#64b5f6'};font-weight:700;">${data.score}分</span> ${heatTag}</div>
+      <div><strong>下游依赖:</strong> ${data.downstream} 个任务/报表</div>
+      <div><strong>更新频率:</strong> ${data.updateFreq}</div>
+      <div><strong>最后更新:</strong> ${data.lastUpdate}</div>
+      <div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border);">
+        <strong>字段列表 (${fields.length}):</strong>
+      </div>
+      ${fields.length>0 ? fields.map(f=>`
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:4px 8px;margin:2px 0;background:rgba(10,14,39,0.4);border-radius:3px;">
+          <span style="color:var(--accent2);">${f.name}</span>
+          <span style="font-size:10px;color:var(--text);">${f.type}</span>
+          <span class="tag tag-${f.heat==='hot'?'hot':'warm'}" style="font-size:10px;">${f.heat==='hot'?'热':'温'}</span>
+          <span style="font-size:10px;color:var(--text);">下游${f.downstream}个</span>
+        </div>
+      `).join('') : '<div style="color:var(--text);font-size:11px;padding:4px 8px;">暂无字段级血缘数据</div>'}
+    </div>
+  `;
+}
+
+function sortCatalog(field){
+  catalogSortDir *= -1;
+  catalogData.sort((a,b)=>{
+    if(field==='score') return (a.score-b.score)*catalogSortDir;
+    return 0;
+  });
+  renderCatalogTable();
+}
+
+function renderCatalogStats(){
+  setTimeout(()=>{
+    const srcChart = getChart('chart-catalog-source');
+    srcChart.setOption({
+      tooltip:{trigger:'item',formatter:'{b}: {c} 张表 ({d}%)'},
+      series:[{
+        type:'pie',radius:['50%','75%'],center:['50%','50%'],
+        data:[
+          {value:820,name:'加工数据',itemStyle:{color:'#4a8eff'}},
+          {value:690,name:'SDK上传',itemStyle:{color:'#00e5ff'}},
+          {value:850,name:'车机采集',itemStyle:{color:'#ffb74d'}},
+          {value:880,name:'云端回传',itemStyle:{color:'#4caf93'}},
+        ],
+        label:{color:'#b8c9e6',fontSize:10}
+      }]
+    });
+
+    const layerChart = getChart('chart-catalog-layer-heat');
+    layerChart.setOption({
+      tooltip:{trigger:'axis',axisPointer:{type:'shadow'}},
+      legend:{data:['热','温','冷'],bottom:0,textStyle:{color:'#b8c9e6',fontSize:10}},
+      grid:{left:40,right:20,top:20,bottom:35},
+      xAxis:{type:'category',data:['ODS','DWD','DWS','ADS','DIM'],axisLabel:{color:'#8899bb',fontSize:10}},
+      yAxis:{type:'value',axisLabel:{color:'#8899bb',fontSize:10},splitLine:{lineStyle:{color:'rgba(100,160,255,0.08)'}}},
+      series:[
+        {name:'热',type:'bar',stack:'total',data:[280,180,120,60,40],itemStyle:{color:'#ef5350'},barWidth:20},
+        {name:'温',type:'bar',stack:'total',data:[350,220,150,80,30],itemStyle:{color:'#ff9800'}},
+        {name:'冷',type:'bar',stack:'total',data:[420,180,100,70,20],itemStyle:{color:'#64b5f6'}}
+      ]
+    });
+  },100);
+}
+
+function exportCatalog(){
+  showToast('✅ 资产清单已导出，请查看下载文件','success');
+}
+
+// ==================== 冷热阈值配置 ====================
+function initThresholdPage(){
+  updateWeights();
+  updateThresholds();
+}
+
+function updateWeights(){
+  const w1=parseInt(document.getElementById('w1').value)||0;
+  const w2=parseInt(document.getElementById('w2').value)||0;
+  const w3=parseInt(document.getElementById('w3').value)||0;
+  const w4=parseInt(document.getElementById('w4').value)||0;
+  const w5=parseInt(document.getElementById('w5').value)||0;
+  const w6=parseInt(document.getElementById('w6').value)||0;
+  const total = w1+w2+w3+w4+w5+w6;
+  document.getElementById('w1-val').textContent=w1;
+  document.getElementById('w2-val').textContent=w2;
+  document.getElementById('w3-val').textContent=w3;
+  document.getElementById('w4-val').textContent=w4;
+  document.getElementById('w5-val').textContent=w5;
+  document.getElementById('w6-val').textContent=w6;
+  const sumEl=document.getElementById('weight-sum');
+  sumEl.textContent=total;
+  sumEl.style.color=total===100?'var(--accent2)':'var(--red)';
+}
+
+function updateThresholds(){
+  const hotTh = parseInt(document.getElementById('hot-threshold').value)||70;
+  const warmMin = parseInt(document.getElementById('warm-threshold-min').value)||30;
+
+  document.getElementById('hot-threshold-val').textContent = hotTh;
+  document.getElementById('warm-threshold-min-val').textContent = warmMin;
+  document.getElementById('warm-threshold-max-val').textContent = hotTh - 1;
+  document.getElementById('cold-threshold-val').textContent = warmMin;
+
+  // 更新预览
+  const totalTables = 3240;
+  // 模拟：阈值越高，热数据越少
+  const hotPct = Math.round(Math.max(5, (90-hotTh)/90 * 35));
+  const warmPct = Math.round(Math.max(15, (hotTh-warmMin)/90 * 50));
+  const coldPct = 100 - hotPct - warmPct;
+
+  document.getElementById('preview-hot').textContent = hotPct+'%';
+  document.getElementById('preview-warm').textContent = warmPct+'%';
+  document.getElementById('preview-cold').textContent = coldPct+'%';
+
+  // 预览分布图
+  const chart = getChart('chart-threshold-preview');
+  chart.setOption({
+    grid:{left:0,right:0,top:5,bottom:0},
+    xAxis:{show:false,data:['热','温','冷']},
+    yAxis:{show:false},
+    series:[{
+      type:'bar',
+      data:[
+        {value:hotPct,itemStyle:{color:'#ef5350',borderRadius:[4,4,0,0]}},
+        {value:warmPct,itemStyle:{color:'#ff9800',borderRadius:[4,4,0,0]}},
+        {value:coldPct,itemStyle:{color:'#64b5f6',borderRadius:[4,4,0,0]}}
+      ],
+      barWidth:'50%',
+      label:{show:true,position:'top',color:'#b8c9e6',fontSize:10,formatter:'{c}%'}
+    }]
+  });
+}
+
+function resetWeights(){
+  document.getElementById('w1').value=30; document.getElementById('w2').value=25;
+  document.getElementById('w3').value=20; document.getElementById('w4').value=10;
+  document.getElementById('w5').value=10; document.getElementById('w6').value=5;
+  updateWeights();
+  showToast('✅ 权重已恢复默认配置','success');
+}
+
+function loadPreset(type){
+  if(type==='high_freq'){
+    document.getElementById('w1').value=40; document.getElementById('w2').value=30;
+    document.getElementById('w3').value=15; document.getElementById('w4').value=5;
+    document.getElementById('w5').value=5; document.getElementById('w6').value=5;
+  }else if(type==='balanced'){
+    document.getElementById('w1').value=25; document.getElementById('w2').value=20;
+    document.getElementById('w3').value=20; document.getElementById('w4').value=15;
+    document.getElementById('w5').value=10; document.getElementById('w6').value=10;
+  }else if(type==='cost_aware'){
+    document.getElementById('w1').value=20; document.getElementById('w2').value=15;
+    document.getElementById('w3').value=15; document.getElementById('w4').value=10;
+    document.getElementById('w5').value=10; document.getElementById('w6').value=30;
+  }
+  updateWeights();
+  showToast('✅ 已加载预设配置（权重合计可能有偏差，请手动调整）','warning');
+}
+
+function resetThresholds(){
+  document.getElementById('hot-threshold').value=70;
+  document.getElementById('warm-threshold-min').value=30;
+  updateThresholds();
+  showToast('✅ 阈值已恢复默认','success');
+}
+
+function saveThreshold(){
+  const w1=parseInt(document.getElementById('w1').value)||0;
+  const w2=parseInt(document.getElementById('w2').value)||0;
+  const w3=parseInt(document.getElementById('w3').value)||0;
+  const w4=parseInt(document.getElementById('w4').value)||0;
+  const w5=parseInt(document.getElementById('w5').value)||0;
+  const w6=parseInt(document.getElementById('w6').value)||0;
+  const total = w1+w2+w3+w4+w5+w6;
+  if(total!==100){
+    showToast('❌ 权重合计必须为100%，当前为 '+total+'%','error');
+    return;
+  }
+  showToast('✅ 配置已保存！将在下次 T+1 评分更新时生效','success');
+}
+
+// ==================== 冷数据自动发现 ====================
+const discoveryData = [
+  {name:'ods.vehicle_gps_archive',size:'520 GB',noAccess:240,noDep:true,noUpdate:210,match:3,source:'车机采集',sourceType:'vehicle_collect',owner:'@wangwu',suggest:'归档',checked:false},
+  {name:'ods.sdk_raw_backup',size:'35 GB',noAccess:180,noDep:true,noUpdate:195,match:3,source:'SDK上传',sourceType:'sdk_upload',owner:'@zhangsan',suggest:'归档',checked:false},
+  {name:'ods.cloud_sync_log_23',size:'280 GB',noAccess:150,noDep:true,noUpdate:160,match:3,source:'云端回传',sourceType:'cloud_sync',owner:'@zhaoliu',suggest:'下线',checked:false},
+  {name:'ods.backup_2024Q1',size:'120 GB',noAccess:190,noDep:true,noUpdate:200,match:3,source:'SDK上传',sourceType:'sdk_upload',owner:'未标注',suggest:'归档',checked:false},
+  {name:'tmp.experiment_042',size:'15 GB',noAccess:365,noDep:true,noUpdate:365,match:3,source:'加工数据',sourceType:'processed',owner:'未知',suggest:'删除',checked:false},
+  {name:'sdk.exp_group_C',size:'8 GB',noAccess:365,noDep:true,noUpdate:320,match:3,source:'SDK上传',sourceType:'sdk_upload',owner:'未知',suggest:'删除',checked:false},
+  {name:'ods.raw_sdk_device_test',size:'5 GB',noAccess:400,noDep:true,noUpdate:400,match:3,source:'SDK上传',sourceType:'sdk_upload',owner:'未知',suggest:'删除',checked:false},
+  {name:'cloud_ota_logs_2024Q1',size:'95 GB',noAccess:160,noDep:true,noUpdate:140,match:3,source:'云端回传',sourceType:'cloud_sync',owner:'@sunqi',suggest:'下线',checked:false},
+  {name:'dws.campaign_backup_2023',size:'42 GB',noAccess:200,noDep:true,noUpdate:250,match:3,source:'加工数据',sourceType:'processed',owner:'@lisi',suggest:'归档',checked:false},
+  {name:'ods.charging_log_archive',size:'180 GB',noAccess:130,noDep:true,noUpdate:140,match:3,source:'云端回传',sourceType:'cloud_sync',owner:'未标注',suggest:'归档',checked:false},
+  {name:'dwd.user_behavior_2022',size:'320 GB',noAccess:220,noDep:false,noUpdate:300,match:2,source:'加工数据',sourceType:'processed',owner:'@zhangsan',suggest:'观察',checked:false},
+  {name:'ods.map_cache_v1',size:'65 GB',noAccess:180,noDep:true,noUpdate:45,match:2,source:'云端回传',sourceType:'cloud_sync',owner:'@wangwu',suggest:'观察',checked:false},
+  {name:'ads.old_export_2023Q4',size:'12 GB',noAccess:280,noDep:false,noUpdate:280,match:2,source:'加工数据',sourceType:'processed',owner:'未知',suggest:'观察',checked:false},
+  {name:'dws.inactive_users_archive',size:'89 GB',noAccess:150,noDep:true,noUpdate:50,match:2,source:'加工数据',sourceType:'processed',owner:'@zhaoliu',suggest:'观察',checked:false},
+  {name:'ods.vehicle_status_2023',size:'410 GB',noAccess:95,noDep:true,noUpdate:180,match:2,source:'车机采集',sourceType:'vehicle_collect',owner:'@wangwu',suggest:'观察',checked:false},
+];
+
+function renderDiscoveryTable(){
+  const matchFilter = document.getElementById('discovery-match-filter').value;
+  const sizeFilter = document.getElementById('discovery-size-filter').value;
+  const search = document.getElementById('discovery-search').value.toLowerCase();
+
+  let filtered = [...discoveryData];
+  if(matchFilter!=='all') filtered = filtered.filter(d=>d.match===parseInt(matchFilter));
+  if(sizeFilter==='large') filtered = filtered.filter(d=>parseFloat(d.size)>100);
+  if(sizeFilter==='medium') filtered = filtered.filter(d=>{const s=parseFloat(d.size);return s>=10&&s<=100;});
+  if(sizeFilter==='small') filtered = filtered.filter(d=>parseFloat(d.size)<10);
+  if(search) filtered = filtered.filter(d=>d.name.toLowerCase().includes(search));
+
+  const tbody = document.getElementById('discovery-table-body');
+  tbody.innerHTML = filtered.map((d,i)=>{
+    const matchBadge = d.match===3?'<span class="tag tag-hot">三无</span>':d.match===2?'<span class="tag tag-warm">二无</span>':'<span class="tag tag-cold">一无</span>';
+    const suggestTag = d.suggest==='删除'?'<span class="tag tag-hot">删除</span>':d.suggest==='下线'?'<span class="tag tag-warm">下线</span>':d.suggest==='归档'?'<span class="tag tag-cold">归档</span>':'<span class="tag tag-temp">观察</span>';
+    const noAccessColor = d.noAccess>300?'color:var(--red);':'color:var(--orange);';
+    const noUpdateColor = d.noUpdate>300?'color:var(--red);':'color:var(--orange);';
+    return `<tr>
+      <td><input type="checkbox" class="discovery-checkbox" data-idx="${i}" onchange="updateDiscoverySelected()" ${d.checked?'checked':''}></td>
+      <td style="color:var(--text-bright);">${d.name}</td>
+      <td style="color:var(--orange);">${d.size}</td>
+      <td style="${noAccessColor}font-weight:600;">${d.noAccess}天</td>
+      <td>${d.noDep?'<span style="color:var(--red);">✗ 无</span>':'<span style="color:var(--green);">✓ 有</span>'}</td>
+      <td style="${noUpdateColor}font-weight:600;">${d.noUpdate}天</td>
+      <td>${matchBadge}</td>
+      <td><span class="tag tag-source">${d.source}</span></td>
+      <td>${d.owner}</td>
+      <td>${suggestTag}</td>
+      <td>
+        <button class="btn btn-outline btn-sm" onclick="event.stopPropagation();switchTab('lineage');">血缘</button>
+        <button class="btn btn-danger btn-sm" onclick="event.stopPropagation();singleOfflineDiscovery('${d.name}')">下线</button>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+function toggleDiscoverySelectAll(cb){
+  discoveryData.forEach(d=>d.checked=cb.checked);
+  renderDiscoveryTable();
+  updateDiscoverySelected();
+}
+
+function updateDiscoverySelected(){
+  const checked = discoveryData.filter(d=>d.checked);
+  document.getElementById('discovery-selected-count').textContent = checked.length;
+  const totalSize = checked.reduce((s,d)=>s+parseFloat(d.size),0);
+  document.getElementById('discovery-selected-size').textContent = totalSize.toFixed(1);
+}
+
+function batchOfflineDiscovery(){
+  const checked = discoveryData.filter(d=>d.checked);
+  if(checked.length===0){ showToast('请先选择要下线的表','warning'); return; }
+  const totalSize = checked.reduce((s,d)=>s+parseFloat(d.size),0);
+  showToast(`✅ 已提交 ${checked.length} 张表的下线申请，预计回收 ${totalSize.toFixed(1)} GB`,'success');
+  checked.forEach(d=>d.checked=false);
+  renderDiscoveryTable();
+  updateDiscoverySelected();
+}
+
+function singleOfflineDiscovery(name){
+  showToast(`✅ 已提交 [${name}] 的下线申请`,'success');
+}
+
+function runDiscoveryScan(){
+  showToast('🔍 正在扫描全量数据表...','warning');
+  setTimeout(()=>{
+    showToast('✅ 扫描完成！新发现 23 张冷数据表，已更新清单','success');
+  },1500);
+}
+
+function pushToGovernance(){
+  showToast('✅ 已将本次发现结果推送至冷数据治理模块','success');
+  setTimeout(()=>switchTab('governance'),800);
+}
+
+function renderDiscoveryTrend(){
+  const chart = getChart('chart-discovery-trend');
+  chart.setOption({
+    tooltip:{trigger:'axis'},
+    legend:{data:['新发现','持续冷','已下线'],bottom:0,textStyle:{color:'#b8c9e6',fontSize:10}},
+    grid:{left:45,right:20,top:20,bottom:40},
+    xAxis:{type:'category',data:['W1','W2','W3','W4','W5','W6','W7','W8'],axisLabel:{color:'#8899bb',fontSize:10},axisLine:{lineStyle:{color:'rgba(100,160,255,0.3)'}}},
+    yAxis:{type:'value',axisLabel:{color:'#8899bb',fontSize:10},splitLine:{lineStyle:{color:'rgba(100,160,255,0.08)'}}},
+    series:[
+      {name:'新发现',type:'bar',data:[28,31,22,18,25,19,31,23],itemStyle:{color:'#ff9800'},barWidth:14,barGap:'20%'},
+      {name:'持续冷',type:'line',data:[98,112,121,131,135,141,145,156],smooth:true,symbol:'circle',symbolSize:5,lineStyle:{width:2,color:'#ef5350'},itemStyle:{color:'#ef5350'}},
+      {name:'已下线',type:'line',data:[3,5,7,8,6,9,8,12],smooth:true,symbol:'circle',symbolSize:5,lineStyle:{width:2,color:'#4caf93'},itemStyle:{color:'#4caf93'}}
+    ]
+  });
+}
+
+// 监听主区域滚动，懒加载图表
+const observer=new IntersectionObserver((entries)=>{
+  entries.forEach(e=>{
+    if(e.isIntersecting){
+      const id=e.target.querySelector('[id^="chart-"]');
+      if(id) resizeAllCharts();
+    }
+  });
+});
+
+console.log('✅ 数据血缘与冷热监控系统 — 高保真原型已就绪');
+console.log('  📊 首页看板: 热温冷分布 + 数据源对比 + 冷数据趋势');
+console.log('  🔗 血缘图谱: DAG 有向图 + 右键菜单 + 节点详情');
+console.log('  ⚡ 影响分析: 4层影响链路 + 建议评审顺序');
+console.log('  🔍 溯源追踪: 5层时间线 + 数据源追溯');
+console.log('  🌡 冷热度分析: 排序表格 + 雷达图 + 趋势线');
+console.log('  🛡 冷数据治理: 下线清单 + 审批工作流');
+console.log('  📋 数据资产目录: 资产清单 + 字段级详情 + 来源/层级分布');
+console.log('  ⚙️ 冷热阈值配置: 六维权重滑块 + 预设方案 + 业务线独立配置');
+	console.log('  🔎 冷数据自动发现: 三无扫描规则 + 发现结果清单 + 趋势图 + 历史记录');
+	console.log('  📡 扫描任务配置: 血缘采集调度 + 冷数据发现调度 + 执行历史');
+
+// ===== 扫描任务配置 =====
+const scanHistoryData = [
+  {type:'血缘采集',trigger:'定时',start:'2026-07-15 02:00:01',end:'2026-07-15 02:23:45',duration:'23m 44s',tables:3240,collected:128,status:'success'},
+  {type:'冷数据发现',trigger:'定时',start:'2026-07-13 02:00:02',end:'2026-07-13 02:18:30',duration:'18m 28s',tables:3240,collected:23,status:'success'},
+  {type:'血缘采集',trigger:'手动',start:'2026-07-14 15:32:10',end:'2026-07-14 15:58:22',duration:'26m 12s',tables:3240,collected:135,status:'success'},
+  {type:'冷数据发现',trigger:'定时',start:'2026-07-06 02:00:01',end:'2026-07-06 02:20:15',duration:'20m 14s',tables:3180,collected:19,status:'success'},
+  {type:'血缘采集',trigger:'定时',start:'2026-07-14 02:00:00',end:'2026-07-14 03:12:08',duration:'72m 8s',tables:3240,collected:142,status:'timeout'},
+  {type:'血缘采集',trigger:'定时',start:'2026-07-13 02:00:03',end:'2026-07-13 02:21:50',duration:'21m 47s',tables:3210,collected:118,status:'success'},
+  {type:'冷数据发现',trigger:'手动',start:'2026-07-10 09:15:30',end:'2026-07-10 09:32:05',duration:'16m 35s',tables:3210,collected:15,status:'success'},
+  {type:'血缘采集',trigger:'定时',start:'2026-07-12 02:00:01',end:'2026-07-12 02:28:33',duration:'28m 32s',tables:3180,collected:105,status:'success'},
+];
+
+function renderScanHistory(){
+  const tbody = document.getElementById('scan-history-body');
+  tbody.innerHTML = scanHistoryData.map(r=>{
+    const statusTag = r.status==='success'
+      ? '<span class="tag tag-core">成功</span>'
+      : r.status==='timeout'
+        ? '<span class="tag tag-warm">超时</span>'
+        : '<span class="tag tag-hot">失败</span>';
+    const typeIcon = r.type==='血缘采集' ? '🔗' : '❄️';
+    const triggerTag = r.trigger==='手动' ? '<span class="tag tag-temp">手动</span>' : '<span class="tag tag-cold">定时</span>';
+    return `<tr>
+      <td>${typeIcon} ${r.type}</td><td>${triggerTag}</td>
+      <td style="font-family:monospace;font-size:11px;">${r.start}</td>
+      <td style="font-family:monospace;font-size:11px;">${r.end}</td>
+      <td>${r.duration}</td><td>${r.tables.toLocaleString()}</td>
+      <td style="color:var(--accent2);">${r.collected}</td>
+      <td>${statusTag}</td>
+      <td><button class="btn btn-outline btn-sm" onclick="showToast('已查看扫描详情日志','success')">详情</button></td>
+    </tr>`;
+  }).join('');
+  document.getElementById('scan-history-count').textContent = scanHistoryData.length;
+}
+
+function updateLineageCron(){
+  const preset = document.getElementById('lineage-cron-preset').value;
+  const input = document.getElementById('lineage-cron-input');
+  if(preset==='custom'){ input.focus(); return; }
+  input.value = preset;
+  updateNextRunTime('lineage-next-run', preset);
+}
+function updateColdCron(){
+  const preset = document.getElementById('cold-cron-preset').value;
+  const input = document.getElementById('cold-cron-input');
+  if(preset==='custom'){ input.focus(); return; }
+  input.value = preset;
+  updateNextRunTime('cold-next-run', preset);
+}
+function updateNextRunTime(elId, cron){
+  const now = new Date();
+  if(cron==='0 2 * * *'){ now.setDate(now.getDate()+1); now.setHours(2,0,0,0); }
+  else if(cron==='0 */6 * * *'){ now.setHours(Math.ceil(now.getHours()/6)*6,0,0,0); }
+  else if(cron==='0 */12 * * *'){ now.setHours(Math.ceil(now.getHours()/12)*12,0,0,0); }
+  else if(cron==='0 2 * * 0'){ const d=(7-now.getDay())%7||7; now.setDate(now.getDate()+d); now.setHours(2,0,0,0); }
+  else if(cron==='0 2 * * 1,4'){ const day=now.getDay(); const nextMon=(8-day)%7||7; const nextThu=(11-day)%7||7; const add=Math.min(nextMon,nextThu)||1; now.setDate(now.getDate()+add); now.setHours(2,0,0,0); }
+  else if(cron==='0 2 1 * *'){ now.setMonth(now.getMonth()+1,1); now.setHours(2,0,0,0); }
+  document.getElementById(elId).textContent = now.getFullYear()+'-'+String(now.getMonth()+1).padStart(2,'0')+'-'+String(now.getDate()).padStart(2,'0')+' 02:00';
+}
+function updateLineageScope(){
+  const scope = document.querySelector('input[name="lineage-scope"]:checked').value;
+  document.getElementById('lineage-datasource-list').style.display = scope==='custom'?'block':'none';
+}
+function updateColdScope(){
+  const scope = document.querySelector('input[name="cold-scope"]:checked').value;
+  document.getElementById('cold-scope-custom').style.display = scope==='custom'?'block':'none';
+}
+function saveLineageScanConfig(){
+  showToast('血缘采集调度配置已保存，下次执行将按新配置运行','success');
+}
+function saveColdScanConfig(){
+  showToast('冷数据发现调度配置已保存，下次扫描将按新配置运行','success');
+}
+function triggerLineageScan(){
+  const btn = event.target;
+  btn.disabled = true;
+  btn.textContent = '⏳ 执行中...';
+  showToast('血缘采集任务已提交，预计耗时 20-30 分钟','success');
+  setTimeout(()=>{ btn.disabled=false; btn.textContent='▶ 立即执行一次'; showToast('血缘采集任务执行完成，采集 142 条新依赖','success'); },2000);
+}
+function triggerColdScan(){
+  const btn = event.target;
+  btn.disabled = true;
+  btn.textContent = '⏳ 执行中...';
+  showToast('冷数据发现任务已提交，预计耗时 15-20 分钟','success');
+  setTimeout(()=>{ btn.disabled=false; btn.textContent='▶ 立即执行一次'; showToast('冷数据扫描完成，新发现 5 张冷表','success'); },1800);
+}
+
+</script>
+</body>
+</html>
